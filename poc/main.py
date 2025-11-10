@@ -62,6 +62,8 @@ class BrowserController:
         self._last_description = None
         # track last-seen large-image source (helps identify current photo)
         self._last_photo_src = None
+        # timestamp (seconds) when _last_description was updated
+        self._last_description_ts = 0.0
         # track which URL we last sampled a description for so we don't sample too early
         self._desc_sampled_for_url = None
         # track which photo src we last sampled for (preferred over url)
@@ -222,12 +224,21 @@ class BrowserController:
                                 photo_src, desc = self._sample_description()
                                 print(f"_sampler: attempt {i+1}/{attempts} -> photo_src={repr(photo_src)[:160]} desc={repr(desc)[:240]}")
                                 if desc:
+                                    try:
+                                        self._last_description_ts = time.time()
+                                    except Exception:
+                                        pass
                                     break
                                 try:
                                     self.page.wait_for_timeout(200)
                                 except Exception:
                                     time.sleep(0.2)
                             self._last_description = desc
+                            try:
+                                if desc:
+                                    self._last_description_ts = time.time()
+                            except Exception:
+                                pass
                             # Mark that we sampled for this photo (and url as a fallback)
                             try:
                                 if photo_src:
@@ -438,6 +449,11 @@ class BrowserController:
                     try:
                         photo_src, desc = self._sample_description()
                         self._last_description = desc
+                        try:
+                            if desc:
+                                self._last_description_ts = time.time()
+                        except Exception:
+                            pass
                         print(f"_do_next: sampled description -> photo_src={repr(photo_src)[:160]} desc={repr(desc)[:200]}")
                     except Exception:
                         pass
@@ -448,6 +464,11 @@ class BrowserController:
                     if _changed(before, after):
                         photo_src, desc = self._sample_description()
                         self._last_description = desc
+                        try:
+                            if desc:
+                                self._last_description_ts = time.time()
+                        except Exception:
+                            pass
                         print(f"_do_next: sampled description (stable) -> photo_src={repr(photo_src)[:160]} desc={repr(desc)[:200]}")
                 except Exception:
                     pass
@@ -831,7 +852,13 @@ class BrowserController:
 
     def get_state(self):
         """Return last observed URL and image bbox (may be slightly stale)."""
-        return {'url': self._last_url, 'image_box': self._last_image_box, 'description': self._last_description}
+        return {
+            'url': self._last_url,
+            'image_box': self._last_image_box,
+            'description': self._last_description,
+            'photo_src': self._last_photo_src,
+            'desc_ts': getattr(self, '_last_description_ts', 0.0),
+        }
 
     def _sample_description(self):
         """Evaluate the page and try to extract a clean description for the current photo.
@@ -871,11 +898,46 @@ class BrowserController:
                 pass
 
             if not res or not isinstance(res, dict):
+                # fallback: try simpler extractor
+                try:
+                    js_fb = (
+                        "() => {"
+                        "  const sel = document.querySelector(\"textarea[aria-label*='Description'], div[contenteditable='true']\");"
+                        "  if (sel) return (sel.value||sel.innerText||'').slice(0,2000);"
+                        "  const vpw = window.innerWidth || 0;"
+                        "  const nodes = document.querySelectorAll('div,section,aside');"
+                        "  for (const n of nodes) { try { const r = n.getBoundingClientRect(); if (r.width>200 && r.x>vpw*0.6) { const t=(n.innerText||'').trim(); if (t && !t.includes('Add a description')) return t; } } catch(e){} }"
+                        "  return '';"
+                        "}"
+                    )
+                    fb = self.page.evaluate(js_fb)
+                    if fb and isinstance(fb, str) and fb.strip():
+                        return (res.get('photo_src') or None, fb.strip())
+                except Exception:
+                    pass
                 return (None, None)
             photo_src = res.get('photo_src') or None
             selected = res.get('selected') or None
             if selected and isinstance(selected, str) and selected.strip():
                 return (photo_src, selected.strip())
+
+            # fallback: if rich extractor didn't produce a 'selected' string, try a simpler extractor
+            try:
+                js_fb2 = (
+                    "() => {"
+                    "  const sel = document.querySelector(\"textarea[aria-label*='Description'], div[contenteditable='true']\");"
+                    "  if (sel) return (sel.value||sel.innerText||'').slice(0,2000);"
+                    "  const vpw = window.innerWidth || 0;"
+                    "  const nodes = document.querySelectorAll('div,section,aside');"
+                    "  for (const n of nodes) { try { const r = n.getBoundingClientRect(); if (r.width>200 && r.x>vpw*0.6) { const t=(n.innerText||'').trim(); if (t && !t.includes('Add a description')) return t; } } catch(e){} }"
+                    "  return '';"
+                    "}"
+                )
+                fb2 = self.page.evaluate(js_fb2)
+                if fb2 and isinstance(fb2, str) and fb2.strip():
+                    return (photo_src, fb2.strip())
+            except Exception:
+                pass
 
             # nothing useful found
             return (photo_src, None)
@@ -996,6 +1058,7 @@ class AssistantUI:
         self.name_vars = []
         self.refresh_names_ui()
         # Start polling browser state to reflect current photo
+        self._last_seen_desc_ts = 0.0
         self.root.after(1000, self.poll_browser_state)
 
     def poll_browser_state(self):
@@ -1007,12 +1070,18 @@ class AssistantUI:
                 short = url.split('/')[-1]
                 self.photo_label.config(text=f'Photo: {short}')
                 desc = state.get('description')
-                if desc:
-                    # show a shortened preview of the description
+                desc_ts = state.get('desc_ts') or 0.0
+                # Update description label if we have a new description or a newer timestamp
+                if desc and desc.strip():
                     preview = desc if len(desc) < 200 else (desc[:197] + '...')
                     self.desc_label.config(text=f'Description: {preview}')
+                    try:
+                        self._last_seen_desc_ts = float(desc_ts) or time.time()
+                    except Exception:
+                        self._last_seen_desc_ts = time.time()
                 else:
-                    self.desc_label.config(text='')
+                    # don't clear the description immediately; keep previous until a new sample appears
+                    pass
             else:
                 self.photo_label.config(text='Photo: (not connected)')
         except Exception:
@@ -1129,10 +1198,79 @@ class AssistantUI:
         threading.Thread(target=_worker, daemon=True).start()
 
     def next_photo(self):
-        self.browser.goto_next_photo()
+        # Navigate then immediately request sampling in a background thread so
+        # the UI is updated as soon as possible without freezing.
+        def _worker():
+            try:
+                self.browser.goto_next_photo()
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror('Navigation error', str(e)))
+                return
+
+            # try sampling several times with short delays until we get a description
+            desc = None
+            attempts = 8
+            for i in range(attempts):
+                try:
+                    # small pause to let the navigation start
+                    time.sleep(0.18)
+                    desc = self.browser.sample_now(timeout=2.0)
+                except Exception:
+                    desc = None
+                if desc:
+                    # update UI immediately with the sampled description
+                    self.root.after(0, lambda d=desc: self._apply_description_to_ui(d))
+                    break
+
+            # always perform a poll to refresh other UI bits (url, photo id)
+            try:
+                self.root.after(0, self.poll_browser_state)
+            except Exception:
+                pass
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def prev_photo(self):
-        self.browser.goto_prev_photo()
+        def _worker():
+            try:
+                self.browser.goto_prev_photo()
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror('Navigation error', str(e)))
+                return
+
+            desc = None
+            attempts = 8
+            for i in range(attempts):
+                try:
+                    time.sleep(0.18)
+                    desc = self.browser.sample_now(timeout=2.0)
+                except Exception:
+                    desc = None
+                if desc:
+                    self.root.after(0, lambda d=desc: self._apply_description_to_ui(d))
+                    break
+
+            try:
+                self.root.after(0, self.poll_browser_state)
+            except Exception:
+                pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _apply_description_to_ui(self, desc):
+        try:
+            if desc:
+                preview = desc if len(desc) < 200 else (desc[:197] + '...')
+                self.desc_label.config(text=f'Description: {preview}')
+                try:
+                    self._last_seen_desc_ts = time.time()
+                except Exception:
+                    pass
+            else:
+                # if no description found, leave current UI unchanged
+                pass
+        except Exception:
+            pass
 
     def shutdown(self):
         try:
