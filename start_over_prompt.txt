@@ -1,0 +1,4 @@
+there is something fundamentally wrong with this code, i want to start over in a new session, please write up a prompt for me to start over ... 
+please include the working details ... the things that are working ... the forking off of a chromium session ... the next and previous button ... i
+believe the code is 'clicking' on the center of the photo and hitting the right or left arrow button ... t
+he code should display the current photo name and description
