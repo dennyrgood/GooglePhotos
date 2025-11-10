@@ -130,7 +130,8 @@ class BrowserController:
             url_before = self.page.url
             print(f'[NEXT] Current URL: {url_before}')
             
-            # Click center of large image
+            # Click center of large image if possible; fall back to viewport center
+            clicked = False
             imgs = self.page.query_selector_all('img')
             for img in imgs:
                 try:
@@ -139,16 +140,40 @@ class BrowserController:
                         cx = box['x'] + box['width'] / 2
                         cy = box['y'] + box['height'] / 2
                         print(f'[NEXT] Clicking image center at ({int(cx)},{int(cy)})')
-                        self.page.mouse.click(cx, cy)
+                        try:
+                            self.page.mouse.click(cx, cy)
+                        except Exception:
+                            # ignore failing mouse click and continue to fallback
+                            pass
                         self.page.wait_for_timeout(300)
                         # Dispatch a user-like pointer event sequence to ensure the gallery registers a real gesture
                         try:
                             self.page.evaluate("(cx,cy) => { const el = document.elementFromPoint(cx, cy); if(!el) return false; ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(type=>{ el.dispatchEvent(new PointerEvent(type, {bubbles:true, cancelable:true, clientX:cx, clientY:cy})); }); return true; }", cx, cy)
                         except Exception:
                             pass
+                        clicked = True
                         break
                 except Exception:
                     continue
+
+            if not clicked:
+                try:
+                    # Fallback: click the viewport center (helps with portrait images)
+                    vp = self.page.evaluate("() => ({w: window.innerWidth, h: window.innerHeight})")
+                    cx = vp.get('w', 800) / 2
+                    cy = vp.get('h', 600) / 2
+                    print(f'[NEXT] Fallback clicking viewport center at ({int(cx)},{int(cy)})')
+                    try:
+                        self.page.mouse.click(cx, cy)
+                    except Exception:
+                        pass
+                    self.page.wait_for_timeout(300)
+                    try:
+                        self.page.evaluate("() => { const cx = Math.floor(window.innerWidth/2); const cy = Math.floor(window.innerHeight/2); const el = document.elementFromPoint(cx, cy); if(!el) return false; ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(type=>{ el.dispatchEvent(new PointerEvent(type, {bubbles:true, cancelable:true, clientX:cx, clientY:cy})); }); return true; }")
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
 
             # Press ArrowRight
             print('[NEXT] Pressing ArrowRight')
@@ -179,7 +204,8 @@ class BrowserController:
             url_before = self.page.url
             print(f'[PREV] Current URL: {url_before}')
             
-            # Click center of large image
+            # Click center of large image if possible; fall back to viewport center
+            clicked = False
             imgs = self.page.query_selector_all('img')
             for img in imgs:
                 try:
@@ -188,16 +214,39 @@ class BrowserController:
                         cx = box['x'] + box['width'] / 2
                         cy = box['y'] + box['height'] / 2
                         print(f'[PREV] Clicking image center at ({int(cx)},{int(cy)})')
-                        self.page.mouse.click(cx, cy)
+                        try:
+                            self.page.mouse.click(cx, cy)
+                        except Exception:
+                            pass
                         self.page.wait_for_timeout(300)
                         # Dispatch a user-like pointer event sequence to ensure the gallery registers a real gesture
                         try:
                             self.page.evaluate("(cx,cy) => { const el = document.elementFromPoint(cx, cy); if(!el) return false; ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(type=>{ el.dispatchEvent(new PointerEvent(type, {bubbles:true, cancelable:true, clientX:cx, clientY:cy})); }); return true; }", cx, cy)
                         except Exception:
                             pass
+                        clicked = True
                         break
                 except Exception:
                     continue
+
+            if not clicked:
+                try:
+                    # Fallback: click the viewport center (helps with portrait images)
+                    vp = self.page.evaluate("() => ({w: window.innerWidth, h: window.innerHeight})")
+                    cx = vp.get('w', 800) / 2
+                    cy = vp.get('h', 600) / 2
+                    print(f'[PREV] Fallback clicking viewport center at ({int(cx)},{int(cy)})')
+                    try:
+                        self.page.mouse.click(cx, cy)
+                    except Exception:
+                        pass
+                    self.page.wait_for_timeout(300)
+                    try:
+                        self.page.evaluate("() => { const cx = Math.floor(window.innerWidth/2); const cy = Math.floor(window.innerHeight/2); const el = document.elementFromPoint(cx, cy); if(!el) return false; ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(type=>{ el.dispatchEvent(new PointerEvent(type, {bubbles:true, cancelable:true, clientX:cx, clientY:cy})); }); return true; }")
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
 
             print('[PREV] Pressing ArrowLeft')
             self.page.keyboard.press('ArrowLeft')
@@ -329,6 +378,13 @@ class BrowserController:
             self.page.mouse.click(x, y)
             self.page.wait_for_timeout(200)
 
+            # Try to explicitly focus the textarea at that point (helps avoid accidental global shortcuts)
+            try:
+                # Use a selector without inner quotes to avoid nested-quote issues
+                self.page.evaluate("(cx,cy) => { const el = document.elementFromPoint(cx, cy); if(el && el.tagName && el.tagName.toLowerCase() === 'textarea') { el.focus(); el.selectionStart = el.value.length; el.selectionEnd = el.value.length; return true; } const t = document.querySelector('textarea[aria-label=Description]'); if(t){ t.focus(); t.selectionStart = t.value.length; t.selectionEnd = t.value.length; return true; } return false; }", x, y)
+            except Exception:
+                pass
+
             # Wait until the textarea is actually the active element (prevents typing to the wrong target)
             try:
                 self.page.wait_for_function(
@@ -424,6 +480,12 @@ class BrowserController:
             # Click textarea and type
             self.page.mouse.click(x, y)
             self.page.wait_for_timeout(300)
+            # Try to explicitly focus the textarea at that point (helps avoid accidental global shortcuts)
+            try:
+                # Use a selector without inner quotes to avoid nested-quote issues
+                self.page.evaluate("(cx,cy) => { const el = document.elementFromPoint(cx, cy); if(el && el.tagName && el.tagName.toLowerCase() === 'textarea') { el.focus(); el.selectionStart = el.value.length; el.selectionEnd = el.value.length; return true; } const t = document.querySelector('textarea[aria-label=Description]'); if(t){ t.focus(); t.selectionStart = t.value.length; t.selectionEnd = t.value.length; return true; } return false; }", x, y)
+            except Exception:
+                pass
             # Wait until the textarea is actually the active element (prevents typing to the wrong target)
             try:
                 self.page.wait_for_function(
@@ -618,9 +680,10 @@ class AssistantUI:
             try:
                 print('[READ] Requesting description...')
                 desc = self.browser.read_description(timeout=8.0)
-                print(f'[READ] Got: {repr(desc)[:100]}')
+                # print(f'[READ] Got: {repr(desc)[:100]}')
+                # Update the UI label instead of a modal popup
                 msg = desc if desc else '(no description)'
-                self.root.after(0, lambda: messagebox.showinfo('Description', msg))
+                self.root.after(0, lambda m=msg: self.desc_label.config(text=m))
             except Exception as e:
                 print(f'[READ] ERROR: {e}')
                 self.root.after(0, lambda: messagebox.showerror('Error', str(e)))
