@@ -1,0 +1,114 @@
+GooglePhotos POC — Troubleshooting Guide
+Date: 2025-11-10
+
+Purpose
+When things go wrong with the GooglePhotos POC (the Tkinter UI + Playwright worker), please collect the items below and paste them into your message to me. The more of these you provide, the faster I can diagnose the issue and propose targeted fixes.
+
+1) High-level description
+- Short summary of what you tried and what happened (1-3 sentences).
+  Example: "Launched the app, clicked NEXT three times — UI showed description 'A' for the next photo instead of the current one".
+- Whether this is reproducible consistently or intermittent.
+- Time (approx) when it happened.
+
+2) Exact commands you ran (copy/paste)
+- Command you used to run the app (include full path and args):
+
+  /opt/homebrew/bin/python3 /path/to/GooglePhotos/poc/main.py
+
+- If you ran other related commands (py_compile, git commands, pip installs) paste them here too.
+
+3) Terminal output & logs
+- Paste the full stdout/stderr from the session where the problem occurred. If it's long, paste the last ~300 lines.
+- If you saw an exception/traceback, copy the entire traceback.
+
+Useful commands to run (paste their output):
+
+```bash
+# Python version
+/opt/homebrew/bin/python3 -V
+
+# Playwright package and CLI info
+/opt/homebrew/bin/python3 -m pip show playwright
+/opt/homebrew/bin/python3 -m playwright --version
+
+# Installed packages (small list):
+/opt/homebrew/bin/python3 -m pip freeze | sed -n '1,200p'
+
+# Git status and commit info for the poc folder
+cd /Users/dennishmathes/Documents/MyWebsiteGIT/GooglePhotos
+git rev-parse --abbrev-ref HEAD
+git rev-parse HEAD
+git status --porcelain
+git log --oneline -n 5
+
+# Quick syntax check
+/opt/homebrew/bin/python3 -m py_compile /Users/dennishmathes/Documents/MyWebsiteGIT/GooglePhotos/poc/main.py || true
+```
+
+4) Provide these specific runtime outputs (how-to)
+- Start the app as you normally do, reproduce the problem, then copy/paste the console output produced by the program (stdout/stderr). If you use the GUI and don't see logs, run it from a terminal as above.
+- Use the UI "READ" button (or the synchronous read_description path) and paste the returned description text.
+- If you used the Inspect Page or a debug inspector I added, paste the exact JSON or console output it produced.
+
+5) State snapshot from the app
+If possible, run these simple interactive checks and paste results:
+- In Python REPL or tiny script, import the file and call get_state() (only if safe). Otherwise, use the UI READ and then copy the `state_of_the_union.txt` and `main-skeleton-full-answer.txt` files.
+
+6) Playwright / browser trace (optional but very helpful)
+- If you're comfortable, enable Playwright tracing for one run (this will create a trace file). Steps (in code):
+  - before the actions that reproduce the bug: context.tracing.start(screenshots=True, snapshots=True)
+  - after reproduction: context.tracing.stop(path='trace.zip')
+- Attach or upload the resulting trace.zip (it can be large). If you can't attach, say so and paste the console trace sections you see.
+
+7) Screenshots
+- If the UI shows the wrong description, take a screenshot of the browser window and the assistant UI (macOS: Cmd-Shift-4 or use Playwright `page.screenshot(path='shot.png')`). Attach both.
+
+8) Files to include in your message
+- `GooglePhotos/poc/main.py` (or `main-skeleton.py` if you're using that)
+- `GooglePhotos/poc/state_of_the_union.txt`
+- `GooglePhotos/poc/main-skeleton-full-answer.txt`
+- `GooglePhotos/poc/state_of_the_union.txt` (if present)
+- The output of `git log --oneline -n 10` from the `GooglePhotos` folder
+
+9) Minimal repro steps (what I need to reproduce locally)
+- Exact URL you were on when you started (e.g., photos.google.com/album/XXX), whether you were logged in, and whether you used headful or headless mode.
+- Steps (1..N): e.g., click LAUNCH, log in, open a photo, press NEXT once, press READ — then paste the console output.
+- If the issue only appears for particular photo(s), include the photo `img.src` if possible (we added sampling to return it in newer versions). Paste the src string.
+
+10) Safety & secrets
+- Do NOT paste your Google credentials or full profile data. If I ask for a log file, redact any cookies, tokens, or personal IDs.
+- If you want me to reproduce a failure locally, either provide a small set of sample images and a public album to test against, or allow me to run the assistant-side debug-only code (we can keep it read-only unless you explicitly ask for apply behavior).
+
+11) Checklist: exactly what to paste in your message (copy this template)
+- 1-2 sentence summary of the problem and how to reproduce.
+- The exact command you ran to start the app.
+- Full terminal stdout/stderr from the run (or the last 300 lines).
+- Any Python tracebacks (full text).
+- `git rev-parse HEAD` and `git status --porcelain` output.
+- Output of `/opt/homebrew/bin/python3 -m py_compile ...` run.
+- Output of `/opt/homebrew/bin/python3 -m pip show playwright` and `-m playwright --version`.
+- The `Inspect Page` / debug inspector JSON output if you ran it.
+- A small sequence of step-by-step actions that reproduce the bug.
+- Any screenshots or trace.zip files.
+
+12) Examples of targeted things I can try once you paste logs
+- Add a verbose sampler: return `{photo_src, description, candidates}` and print candidates.
+- Switch sampling id from URL to large-image `img.src` and retry sampling until `img.src` changes.
+- Increase or remove fixed timeouts and replace with targeted `page.wait_for_selector()` or wait-for-src-change.
+- Expand selectors to include `div[contenteditable=true]`, other aria-labels, or specific class names found in the inspector output.
+- Add synchronous `sample_now()` to block until description appears and use that for immediate UI updates.
+- Revert `poc/main.py` to a previous commit (you can run a git restore I suggest) and compare behavior.
+- Add additional debug logging to the worker loop to capture ordering/races.
+
+13) If you want me to act immediately
+Tell me one of these (choose exactly one):
+- "Please add verbose sampler and sample_now to main-skeleton.py" — I will patch the skeleton file, run a quick py_compile check, and explain how to run it.
+- "Please add an Inspect Page button that prints evaluate() output" — I will patch the working code with a non-destructive inspector and explain what to paste back.
+- "Please attempt to revert to HEAD~2" — I will show the git commands and can run them if you want.
+
+14) Final notes
+- When in doubt, paste more logs rather than less. Even seemingly-irrelevant console prints often contain timing clues.
+- I will not exfiltrate secrets. If logs contain tokens, let me know and I will ignore them or instruct you how to redact before pasting.
+
+
+Thank you — paste the requested items and I'll start diagnosing immediately.

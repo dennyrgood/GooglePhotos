@@ -1,0 +1,17 @@
+Restore Note
+Date: 2025-11-10
+
+What I did:
+- Restored `main-skeleton.py` from the backup file `main-skeleton.py.bak` after a recent experimental patch caused issues.
+- Verified the restored file compiles (py_compile check returned COMPILE_OK).
+
+Files retained:
+- `main-skeleton.py.bak` — this is the backup of the modified version. It is kept intentionally so changes can be re-applied or inspected later.
+
+Why kept:
+- The .bak file contains a proposed enhancement (enhanced sampler + sample_now) that was experimental. You requested to "leave sleeping dogs lie" and keep working code intact while retaining the backup for future reference.
+
+If you want to re-apply the experimental patch later I can:
+- reopen `main-skeleton.py.bak`, extract the changes into a new branch or a new file, and run tests/syntax checks before applying to the working file.
+
+If you want the .bak removed now, tell me "delete backup" and I'll remove it.

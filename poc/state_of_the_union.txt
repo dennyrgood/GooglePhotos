@@ -1,0 +1,95 @@
+State of the Union — GooglePhotos POC (main-skeleton.py)
+Date: 2025-11-10
+
+What this file is / intent
+- `main-skeleton.py` is a minimal proof-of-concept Google Photos "description tagger".
+- Demonstrates a Tkinter UI that drives a Playwright browser worker thread to:
+  - open Google Photos with a persistent profile,
+  - navigate photos (Next/Prev),
+  - read the current description (scrapes textarea[aria-label="Description"]),
+  - append an "X" to the description (click + type),
+  - show the current photo URL and description in the UI.
+
+High-level design / components
+- Browser worker
+  - Class: BrowserController
+  - Dedicated worker thread `_worker_main` that starts Playwright and runs a command loop reading from `self._cmd_queue`.
+  - Commands: 'next', 'prev', 'append_x', 'read_desc', 'stop'.
+  - Uses `launch_persistent_context` with `user_data_dir=~/.googlephotos_profile` and `channel='chrome'` to reuse a logged-in profile.
+
+- Sampling/navigation logic
+  - `_do_next()` / `_do_prev()` click the center of a large image (heuristic: img elements with width>200 && height>100) and press ArrowRight/Left.
+  - Waits a fixed timeout (1.5s), updates `_last_url`, calls `_sample_description()` and stores `_last_description`.
+  - `_sample_description()` runs `page.evaluate` to find `textarea[aria-label="Description"]`, filter visible ones and return a chosen value (middle one) or null.
+  - `_do_append_x()` finds the textarea, clicks, presses End, types 'X', and updates `_last_description` locally.
+
+- UI
+  - Class: AssistantUI (Tkinter)
+  - Buttons: LAUNCH, PREV, NEXT, READ, ADD X; labels for photo and description.
+  - Polling: `poll_browser_state()` calls `browser.get_state()` every 500ms and updates UI from `{'url','description'}`.
+  - Synchronous read path uses a blocking Event so UI can request a read and wait for worker result.
+
+Contract (inputs / outputs / side effects)
+- Inputs: UI actions, persistent browser profile at `~/.googlephotos_profile`.
+- Outputs: description strings (or None), console logs, UI labels.
+- Side effects: launches browser, simulates clicks/keyboard, modifies page content on `ADD X`.
+
+Success criteria
+- Browser starts and navigates to photos.google.com.
+- NEXT/PREV change visible photo.
+- READ returns current description (when present).
+- ADD X appends 'X' to description textarea.
+
+Error modes
+- Playwright not installed -> start() raises RuntimeError.
+- `channel='chrome'` not available -> launch failure.
+- DOM changes (different aria-labels, contenteditable elements) -> sampler returns None.
+- Timing/race issues -> page may update after fixed sleeps, causing stale/previous descriptions.
+- Click coordinates may be wrong on high-DPI displays or if elements are off-screen.
+
+Key lines / behaviors to watch
+- Persistent profile: `user_data_dir = ~/.googlephotos_profile` in `_worker_main`.
+- Image click heuristic: scanning `img` elements and using `bounding_box()` to pick the large image.
+- Description selector: `textarea[aria-label="Description"]` — fragile to DOM/localization changes.
+- Fixed waits: multiple `wait_for_timeout()` calls (150ms, 1500ms) — brittle and likely root of one-behind issues.
+- `read_desc` uses blocking Event to return result synchronously — good pattern for UI reads.
+
+Likely causes of "one-behind" / missing description problems
+- Relying on URL change + fixed 1.5s sleep is not robust; the visual viewer may update DOM asynchronously after URL changes.
+- Sampling a specific textarea is brittle when Google Photos uses other elements (contenteditable, different labels, or different layout).
+- Choosing the "middle" textarea when multiple exist can pick the wrong element.
+- Polling every 500ms can overwrite freshly-sampled values if timing isn't coordinated.
+
+Practical improvements (concrete, prioritized)
+1. Capture photo identity when sampling: return large-image `src` (or stable photo id) along with the sampled description so you can validate sample belongs to current photo.
+2. Replace brittle sleeps with targeted waits: use `page.wait_for_selector()` or wait until the large image `src` differs from previous, then sample.
+3. Improve sampling heuristics: expand evaluator to find largest visible `<img>`, check `textarea`, `div[contenteditable]`, and known info-panel classes; return `{photo_src, description, candidates}`.
+4. Add retry logic with short sleeps to sample again until non-empty or timeout; useful right after navigation.
+5. Add a synchronous `sample_now()` helper that blocks until non-empty sample or timeout; call it immediately after Next/Prev for deterministic UI updates.
+6. Implement verbose sampling dump for debugging: return candidate texts, bounding boxes, and node paths for tuning selectors.
+7. Playwright launch fallback: if `channel='chrome'` fails, fall back to no channel or try other channels.
+8. Make "apply" behavior safe: provide preview/dry-run and explicit user confirmation before committing writes.
+
+How to run (skeleton)
+- Install dependencies and run the script. Example:
+
+```bash
+/opt/homebrew/bin/python3 -m pip install -r GooglePhotos/poc/requirements.txt
+# If Playwright included: python -m playwright install
+/opt/homebrew/bin/python3 GooglePhotos/poc/main-skeleton.py
+```
+
+Notes: log into Google Photos in the launched browser window when prompted.
+
+Suggested immediate next actions (aligned with existing todo list)
+- Run the app and use a new "Inspect Page" helper or verbose sampling dump to capture real DOM structures from problematic photos for selector tuning.
+- Implement enhanced `page.evaluate` that returns `{photo_src, description, candidates}` and add `sample_now()` synchronous method.
+- Add a "Sample (wait)" UI button for immediate verification.
+
+Checklist of risks and mitigations
+- Risk: DOM changes break selectors -> Mitigation: multi-fallback selectors and candidate logging.
+- Risk: Race between navigation and sampling -> Mitigation: detect photo identity via large-image `src` and sample only after it changes (with retries).
+- Risk: Playwright launch/channel failure -> Mitigation: fallback to standard chromium and surface errors to the UI.
+
+
+End of state_of_the_union.txt

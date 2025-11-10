@@ -1,0 +1,138 @@
+Progress update: I read the current todo list and loaded `GooglePhotos/poc/main-skeleton.py`. Below is a focused, actionable summary of what this skeleton version does, how it works, likely failure modes, and clear next steps you can take (and which match the existing todo items).
+
+## What this file is / intent
+`main-skeleton.py` is a minimal proof-of-concept Google Photos "description tagger". It demonstrates a small Tkinter UI that drives a Playwright browser worker thread to:
+- open Google Photos with a persistent profile,
+- navigate photos (Next/Prev),
+- read the current description (by scraping a textarea with aria-label "Description"),
+- append an "X" to the description (by clicking into the textarea and typing),
+- show the current photo URL and description in the UI.
+
+It purposely keeps behavior simple and synchronous-ish (UI queues commands; worker thread executes them).
+
+## High-level design / components
+- Browser worker
+  - Class: `BrowserController`
+  - Worker thread model: starts a dedicated thread `_worker_main` which starts Playwright and runs a command loop reading from `self._cmd_queue`.
+  - Commands supported: `'next'`, `'prev'`, `'append_x'`, `'read_desc'`, `'stop'`.
+  - Holds Playwright objects: `self.playwright`, `self.context`, `self.page`.
+  - Uses `launch_persistent_context` with `user_data_dir=~/.googlephotos_profile` and `channel='chrome'` to reuse a logged-in profile.
+
+- Sampling/navigation logic
+  - `_do_next()` / `_do_prev()`:
+    - Attempt to click the center of a large image (scans `img` elements, picks those with width>200 & height>100 and clicks their center).
+    - Sends an ArrowRight / ArrowLeft keystroke.
+    - Waits a fixed timeout (1.5s), updates `self._last_url`, then calls `_sample_description()` and sets `self._last_description`.
+  - `_sample_description()`:
+    - Runs a `page.evaluate` JS snippet which queries `textarea[aria-label="Description"]`, logs info, filters visible textareas with non-empty value, and returns a chosen value (middle one).
+    - Returns `None` if nothing was found or on error.
+
+  - `_do_append_x()`:
+    - Finds the textarea similarly, computes its center, clicks into it, presses End, and types 'X'. Updates `self._last_description` locally to reflect the append.
+
+- UI
+  - Class: `AssistantUI`
+  - Creates small Tkinter window with:
+    - LAUNCH, PREV, NEXT, READ, ADD X buttons.
+    - Photo label (shows last URL segment).
+    - Description area (wraps and shows the last sampled description).
+  - Polling: `poll_browser_state()` calls `browser.get_state()` every 500 ms and updates UI from `{'url','description'}`.
+
+- Synchronous read path
+  - `read_description()` enqueues `('read_desc', (Event,res))` and waits on the Event so UI can perform a blocking read (with timeout). Worker sets `res['description']` and signals the Event.
+
+## Contract (inputs / outputs / side effects)
+- Inputs:
+  - UI actions (button clicks) that enqueue commands.
+  - Persistent browser profile at `~/.googlephotos_profile` (used by Playwright).
+- Outputs:
+  - Returns description strings (or None) via `read_description`.
+  - Prints debugging logs to stdout.
+  - UI shows `photo_label` and `desc_label`.
+- Side effects:
+  - Launches a real browser instance; simulates clicks/keyboard; modifies page content when using `ADD X`.
+
+Success criteria:
+- Browser starts and navigates to `https://photos.google.com`.
+- `NEXT`/`PREV` successfully cause visible photo change.
+- `READ` returns current description text (if present).
+- `ADD X` appends a literal 'X' to the description text area.
+
+Error modes:
+- Playwright not installed → RuntimeError raised in `start`.
+- `channel='chrome'` not available → launch may fail.
+- DOM changes in Google Photos (different aria-labels, no textarea elements) → `_sample_description` returns None.
+- Timing/race issues: page may not update within the fixed timeouts, causing stale/previous description to be read.
+- Clicking coordinates from bounding boxes may be incorrect on high-DPI displays or if the element is off-screen.
+
+## Key lines / behaviors to be aware of
+- Persistent profile: user_data_dir = `~/.googlephotos_profile` in `_worker_main`.
+- Image click heuristic: scanning all `img` elements and using `bounding_box()` to pick large image (width>200 && height>100).
+- Description selector: `textarea[aria-label="Description"]` — this is fragile if Google Photos uses different markup, different language, or renders description in non-textarea elements.
+- Fixed waits: many `wait_for_timeout(150/1500)` calls — these are brittle and can be the cause of "one-behind" or missing reads when the viewer updates slower/faster.
+- `read_desc` command uses a blocking Event to return results synchronously — good pattern for UI blocking reads.
+
+## Likely causes of the "one-behind" / missing description problems (based on this skeleton)
+- Relying on URL change + a fixed 1.5s sleep may not be robust; the visual viewer may update DOM asynchronously after the URL changes.
+- Sampling only `textarea[aria-label="Description"]` won't capture description if Google Photos renders a non-textarea (or uses a different aria-label or a contenteditable element).
+- Using the middle textarea as heuristic can pick the wrong element if multiple textareas exist.
+- Polling every 500 ms in the UI may overwrite freshly-sampled values if timing isn't coordinated (the skeleton sets `_last_description` in worker — poll reads it; less likely a race, but still subject to ordering).
+
+## Practical improvements (concrete, prioritized)
+1. Make sampling robust and identify photo identity:
+   - Capture the large-image `src` (or a stable photo id) along with the sampled description. Use that to ensure the sampled description belongs to the currently-visible photo.
+   - Add `desc_ts` timestamp when a non-empty description is sampled so UI only updates on newer samples.
+
+2. Replace brittle waits with targeted waits:
+   - Where possible use `page.wait_for_selector()` for viewer containers or info panels, or wait until the large image `src` differs from previous.
+   - After navigation, wait until `page.evaluate(() => getLargeImageSrc())` changes, then sample.
+
+3. Improve the sampling heuristics:
+   - Expand the JS evaluator to:
+     - find the largest visible `<img>` and return its `src`,
+     - look for `textarea`, `div[contenteditable]`, or other known classes in the right-side info panel,
+     - return an object {photo_src, description, candidates} so you can log candidate nodes for tuning.
+   - Add retry attempts with short sleeps if initial sample returns empty; return the first non-empty result within N attempts.
+
+4. Add a synchronous "sample now until non-empty" helper:
+   - Implement `sample_now()` which enqueues a command and blocks until either a non-empty description is returned or timeout is reached; use that for immediate UI updates after Next/Prev.
+
+5. Add a verbose sampling dump for debugging (matches your todo):
+   - Log candidate nodes, text lengths, and bounding boxes so you can run `Inspect Page` and tune selectors.
+
+6. Handle Playwright launch fallback:
+   - If `channel='chrome'` fails, fallback to `self.playwright.chromium.launch_persistent_context(...)` without channel, or try `'msedge'` if available.
+
+7. Safe apply flow:
+   - Currently `_do_append_x` simulates typing into the textarea — for any real "apply" feature, implement a dry-run / preview and confirm with the user before committing writes.
+
+## Quick "how to run" (from this skeleton)
+Install Playwright and the dependencies listed in your POC `requirements.txt`, then run the skeleton:
+
+```bash
+# from the project folder that contains requirements.txt
+/opt/homebrew/bin/python3 -m pip install -r GooglePhotos/poc/requirements.txt
+# If playright is included, also run playwright install if needed:
+# python -m playwright install
+
+/opt/homebrew/bin/python3 GooglePhotos/poc/main-skeleton.py
+```
+
+Notes:
+- If Playwright is not installed, the code raises an error in `start`.
+- When the browser launches, log into Google Photos once using the persistent profile window.
+
+## Suggested immediate next actions (aligned with your todo list)
+- Run the existing "Inspect Page" (or implement a verbose inspector) to capture actual DOM structure for several problematic photos — that will let you tune selectors. (Todo item: Collect inspect output)
+- Implement a richer sampler that returns {photo_src, description, candidate_texts} and add a `sample_now` synchronous method.
+- Add a "Sample (wait)" UI button for immediate verification.
+
+## Quick checklist of risks and mitigations
+- Risk: DOM changes break selector -> Mitigation: implement multiple fallbacks (textarea, contenteditable, explicit info panel classes) and log candidate nodes.
+- Risk: Race between navigation and sampling -> Mitigation: detect photo identity via large-image `src` and sample only after it changes (with retries).
+- Risk: Playwright launch/channel failure -> Mitigation: fallback to standard chromium and surface errors to the UI.
+
+
+If you want I can:
+- implement an enhanced `page.evaluate` that returns `{photo_src, description, candidates}` and add a `sample_now` synchronous method, plus a verbose debug dump to console (non-destructive). This directly addresses the "one-behind" and debugging needs. Want me to implement that change now in `main-skeleton.py` (or apply it to `poc/main.py`)?
+- or I can walk you through running the current skeleton and capturing one or two `Inspect Page` outputs from your runtime so I can tailor selectors precisely. Which do you prefer?

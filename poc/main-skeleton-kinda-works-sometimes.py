@@ -318,16 +318,6 @@ class BrowserController:
             print(f'[APPEND_X] Clicking at ({x}, {y})')
             self.page.mouse.click(x, y)
             self.page.wait_for_timeout(200)
-
-            # Wait until the textarea is actually the active element (prevents typing to the wrong target)
-            try:
-                self.page.wait_for_function(
-                    "() => { const a = document.activeElement; return !!(a && a.getAttribute && a.getAttribute('aria-label') === 'Description'); }",
-                    timeout=2000,
-                )
-                print('[APPEND_X] textarea became active')
-            except Exception:
-                print('[APPEND_X] WARNING: textarea did not become active within timeout')
             
             # Move to end
             print('[APPEND_X] Pressing End key')
@@ -335,8 +325,8 @@ class BrowserController:
             self.page.wait_for_timeout(150)
             
             # Type X
-            print('[APPEND_X] Typing space')
-            self.page.keyboard.type(' ')
+            print('[APPEND_X] Typing X')
+            self.page.keyboard.type('X')
             self.page.wait_for_timeout(200)
             
             print(f'[APPEND_X] SUCCESS - appended X to "{current}"')
@@ -414,15 +404,6 @@ class BrowserController:
             # Click textarea and type
             self.page.mouse.click(x, y)
             self.page.wait_for_timeout(300)
-            # Wait until the textarea is actually the active element (prevents typing to the wrong target)
-            try:
-                self.page.wait_for_function(
-                    "() => { const a = document.activeElement; return !!(a && a.getAttribute && a.getAttribute('aria-label') === 'Description'); }",
-                    timeout=2000,
-                )
-                print('[APPEND_TEXT] textarea became active')
-            except Exception:
-                print('[APPEND_TEXT] WARNING: textarea did not become active within timeout')
             self.page.keyboard.press('End')
             self.page.wait_for_timeout(150)
             # Type the provided text
@@ -520,7 +501,7 @@ class AssistantUI:
         self.read_btn = ttk.Button(btn_frame, text='READ', command=self.read_current, state='disabled')
         self.read_btn.grid(row=0, column=3, sticky='ew', padx=2)
 
-        self.add_btn = ttk.Button(btn_frame, text='ADD Space', command=self.add_x, state='disabled')
+        self.add_btn = ttk.Button(btn_frame, text='ADD X', command=self.add_x, state='disabled')
         self.add_btn.grid(row=0, column=4, sticky='ew', padx=2)
 
         # Quick name buttons
