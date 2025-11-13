@@ -1,0 +1,13 @@
+Hitting the backspace now longer work, nor does shift backspace
+
+no action occurs
+
+uses the names.json to assign a group of names, almost the same code, except it strips the number out along with the ()s
+
+example:
+
+        "(1) Dennis Laura ",
+        "(2) Dennis Bekah ",
+        "(3) Dennis Steph "
+
+the "(1) " would be stripped before sending to google photos, the trailing space, as with the names would remain untouched.

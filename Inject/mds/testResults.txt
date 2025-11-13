@@ -1,0 +1,51 @@
+### Test 1: Navigation (2 min)
+- [ok ] Press Ctrl+N - should go to next photo
+- [ok ] Press Ctrl+P - should go to previous photo
+
+- [ok ] Press Up arrow - should go to previous
+- [ok ] Press Down arrow - should go to next
+
+### Test 2: Adding Names (2 min)
+- [ok ] Press Ctrl+D - should add "Dennis"
+- [ok ] Press Ctrl+L - should add "Laura"
+- [no, get (Dennis), not what i expect: "Dennis Laura" ] Press Ctrl+1 - should add "(1) Dennis Laura"
+- [no, get (L)aura, not waht i expect "Dennis Bekah" ] Press Ctrl+2 - should add "(2) Dennis Bekah"
+
+names.json:
+
+
+{
+    "_comment": "List of names with initials in parentheses",
+    "_comment_do_not_use": "(P)rev, (N)ext are reserved",
+    "_comment_ck_syntax_carefully": "Make sure the commas are correct",
+    "names": [
+        "(D)ennis ",
+        "(L)aura ",
+        "(B)ekah ",
+        "(S)teph ",
+        "Sara(h) ",
+        "(T)im ",
+        "(C)reighton ",
+        "(J)eff ",
+        "(G)raeme ",
+        "(1) Dennis Laura ",
+        "(2) Dennis Bekah ",
+        "(3) Dennis Steph "
+    ]
+}
+
+### Test 3: Text Input (2 min)
+- [ok ] Type "test" - should appear in description
+- [still getting 2 ] Press spacebar - should add 1 space (NOT 2!)
+- [ok ] Type "more" - should continue normally
+
+
+### Test 4: Deletion (2 min)
+- [just deletes char before cursor ] Press BackSpace - should delete from end
+- [just deletes char before cursor ] Press Delete - should delete at cursor
+- [just deletes char before cursor ] Press Shift+Delete - should clear entire field
+
+### Test 5: Special Keys (1 min)
+- [ok ] Press Tab - should add "Dennis"
+- [ok ] Press Comma - should add ", "
+- [ok ] Press Period - should add ". "

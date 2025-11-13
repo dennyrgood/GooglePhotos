@@ -1,0 +1,24 @@
+Hitting the backspace now longer work, nor does shift backspace
+
+no action occurs
+
+
+:wq### 1. **Album-based Auto-Population**
+- **Goal**: Leverage album information to pre-populate names
+- **Implementation**: Read the albums listed in the right panel (e.g., "Laura", "Family 2024") and suggest names from names.json that match
+- **Benefit**: Faster tagging - album name often indicates who should be tagged
+- **Example**: If in "Laura's Birthday" album, auto-suggest "Laura" when moving to next imagee
+
+control 1
+Control 2
+conrol 3
+
+uses the names.json to assign a group of names, almost the same code, except it strips the number out along with the ()s
+
+example:
+
+        "(1) Dennis Laura ",
+        "(2) Dennis Bekah ",
+        "(3) Dennis Steph "
+
+the "(1) " would be stripped before sending to google photos, the trailing space, as with the names would remain untouched.
