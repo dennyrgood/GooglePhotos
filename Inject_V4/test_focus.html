@@ -1,0 +1,10 @@
+<!-- This is a guide for what to look for in Google Photos DOM -->
+<!-- The image viewer typically has these elements:
+  - A role="main" region that contains the viewer
+  - An [aria-label] or class that identifies it as the viewer
+  - A container with data-has-scrollable or similar
+  - The actual IMG tag inside, but that changes frequently
+  
+The key is to focus something STABLE like the viewer container, not the image itself.
+Google Photos shortcuts (j/k) work on the viewer container, not individual elements.
+-->
