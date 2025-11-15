@@ -15,6 +15,14 @@ class KeystrokeHandler:
         self.names_list = []  # Store original names list for UI
         self._load_shortcuts()
     
+    def reload_shortcuts(self):
+        """Reload shortcuts from names.json file."""
+        self.shortcuts = {}
+        self.names_list = []
+        self._load_shortcuts()
+        print(f'[KEYSTROKE] Reloaded {len(self.names_list)} names from file')
+        return self.names_list
+    
     def _load_shortcuts(self):
         """Load shortcuts from names.json and register defaults."""
         # Arrow keys for navigation

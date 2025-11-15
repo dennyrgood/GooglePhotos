@@ -20,54 +20,49 @@ class AssistantUI:
         main = ttk.Frame(root, padding=10)
         main.grid(row=0, column=0, sticky='nsew')
 
-        # LAUNCH BUTTONS FRAME - First row
-        launch_frame = ttk.LabelFrame(main, text='Launch Browser Mode', padding=5)
-        launch_frame.grid(row=0, column=0, columnspan=4, sticky='ew', pady=(0, 8))
-        
-        self.launch_default_btn = ttk.Button(launch_frame, text='LAUNCH BROWSER', 
+        # ROW 0: Navigation and control buttons
+        nav_frame = ttk.Frame(main)
+        nav_frame.grid(row=0, column=0, columnspan=4, sticky='ew', pady=(0, 8))
+
+        self.launch_default_btn = ttk.Button(nav_frame, text='LAUNCH', 
                                               command=lambda: self.launch_with_mode('default'))
         self.launch_default_btn.grid(row=0, column=0, sticky='ew', padx=2)
-        
-        launch_frame.columnconfigure(0, weight=1)
 
-        # CONTROL BUTTONS FRAME - Second row
-        btn_frame = ttk.Frame(main)
-        btn_frame.grid(row=1, column=0, columnspan=4, sticky='ew', pady=(0, 8))
+        self.prev_btn = ttk.Button(nav_frame, text='← PREV', command=self.prev_photo, state='disabled')
+        self.prev_btn.grid(row=0, column=1, sticky='ew', padx=2)
 
-        self.prev_btn = ttk.Button(btn_frame, text='◄ PREV (←)', command=self.prev_photo, state='disabled')
-        self.prev_btn.grid(row=0, column=0, sticky='ew', padx=2)
+        self.next_btn = ttk.Button(nav_frame, text='NEXT →', command=self.next_photo, state='disabled')
+        self.next_btn.grid(row=0, column=2, sticky='ew', padx=2)
 
-        self.next_btn = ttk.Button(btn_frame, text='NEXT (→) ►', command=self.next_photo, state='disabled')
-        self.next_btn.grid(row=0, column=1, sticky='ew', padx=2)
-
-        self.read_btn = ttk.Button(btn_frame, text='READ', command=self.read_current, state='disabled')
-        if self.debug_mode:
-            self.read_btn.grid(row=0, column=2, sticky='ew', padx=2)
-
-        self.add_btn = ttk.Button(btn_frame, text='ADD Space', command=self.add_x, state='disabled')
+        self.add_btn = ttk.Button(nav_frame, text='ADD Space', command=self.add_x, state='disabled')
         self.add_btn.grid(row=0, column=3, sticky='ew', padx=2)
         
-        self.backspace_btn = ttk.Button(btn_frame, text='⌫ BACKSPACE', command=self.do_backspace, state='disabled')
+        self.backspace_btn = ttk.Button(nav_frame, text='⌫ BACK', command=self.do_backspace, state='disabled')
         self.backspace_btn.grid(row=0, column=4, sticky='ew', padx=2)
         
-        self.dump_btn = ttk.Button(btn_frame, text='DUMP HTML', command=self.dump_html, state='disabled')
+        self.reload_btn = ttk.Button(nav_frame, text='↻ RELOAD', command=self.reload_names, state='disabled')
+        self.reload_btn.grid(row=0, column=5, sticky='ew', padx=2)
+        
+        # Debug buttons (optional)
+        debug_col = 6
         if self.debug_mode:
-            self.dump_btn.grid(row=0, column=5, sticky='ew', padx=2)
-        
-        # Name buttons
-        self.name_buttons = []
-        base_col = 6
-        for idx, raw in enumerate(self.keystroke.get_names_list()):
-            label = raw
-            pushed = ''.join(ch for ch in raw if ch not in '()')
+            self.read_btn = ttk.Button(nav_frame, text='READ', command=self.read_current, state='disabled')
+            self.read_btn.grid(row=0, column=debug_col, sticky='ew', padx=2)
+            debug_col += 1
             
-            btn = ttk.Button(btn_frame, text=label, command=(lambda p=pushed: self.add_name(p)), state='disabled')
-            btn.grid(row=0, column=base_col + idx, sticky='ew', padx=2)
-            self.name_buttons.append(btn)
+            self.dump_btn = ttk.Button(nav_frame, text='DUMP', command=self.dump_html, state='disabled')
+            self.dump_btn.grid(row=0, column=debug_col, sticky='ew', padx=2)
+            debug_col += 1
         
-        # Configure columns
-        for i in range(6 + len(self.name_buttons)):
-            btn_frame.columnconfigure(i, weight=1)
+        for i in range(debug_col):
+            nav_frame.columnconfigure(i, weight=1)
+
+        # ROW 1: Name shortcut buttons
+        self.shortcut_frame = ttk.Frame(main)
+        self.shortcut_frame.grid(row=1, column=0, columnspan=4, sticky='ew', pady=(0, 8))
+        
+        self.name_buttons = []
+        self._create_name_buttons()
 
         # Photo URL label - row 2
         self.photo_label = ttk.Label(main, text='Photo: (not connected)', font=('Courier', 10))
@@ -105,6 +100,48 @@ class AssistantUI:
         print('[UI] Starting poll loop')
         self.poll_browser_state()
     
+    def _create_name_buttons(self):
+        """Create name shortcut buttons from keystroke handler's names list."""
+        # Clear existing buttons
+        for btn in self.name_buttons:
+            btn.destroy()
+        self.name_buttons = []
+        
+        # Create new buttons
+        for idx, raw in enumerate(self.keystroke.get_names_list()):
+            label = raw
+            pushed = ''.join(ch for ch in raw if ch not in '()')
+            
+            btn = ttk.Button(self.shortcut_frame, text=label, 
+                            command=(lambda p=pushed: self.add_name(p)), 
+                            state='disabled' if not self.browser._running else 'normal')
+            btn.grid(row=0, column=idx, sticky='ew', padx=2)
+            self.name_buttons.append(btn)
+        
+        # Configure columns
+        for i in range(len(self.name_buttons)):
+            self.shortcut_frame.columnconfigure(i, weight=1)
+    
+    def reload_names(self):
+        """Reload names from names.json and update UI."""
+        try:
+            print('[RELOAD] Reloading names.json...')
+            new_names = self.keystroke.reload_shortcuts()
+            
+            # Rebuild name buttons
+            self._create_name_buttons()
+            
+            messagebox.showinfo('Reload Complete', 
+                              f'Reloaded {len(new_names)} names from names.json')
+            print(f'[RELOAD] Successfully reloaded {len(new_names)} names')
+            
+        except Exception as e:
+            print(f'[RELOAD] ERROR: {e}')
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror('Reload Failed', f'Failed to reload names.json: {str(e)}')
+    
+
     def on_key_press(self, event):
         """Handle keyboard shortcuts and natural typing."""
         # Extract keycode if available (from event.keysym_num on some systems)
@@ -204,6 +241,7 @@ class AssistantUI:
             self.read_btn.config(state='normal')
         self.add_btn.config(state='normal')
         self.backspace_btn.config(state='normal')
+        self.reload_btn.config(state='normal')
         if self.debug_mode:
             self.dump_btn.config(state='normal')
         
