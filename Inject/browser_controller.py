@@ -293,6 +293,7 @@ class BrowserController:
                     allAlbums: [],
                     faces: [],
                     allFaces: [],
+                    textareas: [],
                     currentDescription: textarea.value || '',
                     textareaInfo: {
                         ariaLabel: textarea.getAttribute('aria-label'),
@@ -300,6 +301,54 @@ class BrowserController:
                         className: textarea.className
                     }
                 };
+
+                // NEW: Analyze ALL textareas in document
+                const allTextareas = document.querySelectorAll('textarea[aria-label="Description"]');
+                const centerX = window.innerWidth / 2;
+                const centerY = window.innerHeight / 2;
+
+                for (let i = 0; i < allTextareas.length; i++) {
+                    const ta = allTextareas[i];
+                    const rect = ta.getBoundingClientRect();
+                    const value = (ta.value || '').trim();
+                    const hidden = isElementVisuallyHidden(ta);
+                    const inSidebar = sidebarRoot.contains(ta);
+
+                    // Calculate distance from center
+                    const taCenter = {
+                        x: rect.left + rect.width / 2,
+                        y: rect.top + rect.height / 2
+                    };
+                    const distance = Math.sqrt(
+                        Math.pow(taCenter.x - centerX, 2) + 
+                        Math.pow(taCenter.y - centerY, 2)
+                    );
+
+                    const style = window.getComputedStyle(ta);
+                    const zIndex = parseInt(style.zIndex) || 0;
+
+                    results.textareas.push({
+                        index: i + 1,
+                        ariaLabel: ta.getAttribute('aria-label'),
+                        id: ta.id || '(no id)',
+                        className: ta.className || '(no class)',
+                        offsetHeight: ta.offsetHeight,
+                        offsetWidth: ta.offsetWidth,
+                        hasContent: value.length > 0,
+                        contentLength: value.length,
+                        contentPreview: value.substring(0, 50),
+                        hidden: hidden,
+                        inSidebar: inSidebar,
+                        distance: Math.round(distance),
+                        zIndex: zIndex,
+                        rect: {
+                            top: Math.round(rect.top),
+                            left: Math.round(rect.left),
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height)
+                        }
+                    });
+                }
 
                 // 1. Find ALL Album Names (div.DgVY7 > div.AJM7gb) in entire document
                 const allDgvy7DivsGlobal = document.querySelectorAll('div.DgVY7');
@@ -383,6 +432,52 @@ class BrowserController:
             textarea_info = result.get('textareaInfo', {})
             print(f'[ANALYSIS] Textarea: aria-label="{textarea_info.get("ariaLabel", "N/A")}", id="{textarea_info.get("id", "N/A")}"')
             print(f'[ANALYSIS] Current Description: "{result.get("currentDescription", "")[:80]}..."')
+
+            # NEW: Print textarea analysis
+            textareas = result.get('textareas', [])
+            print(f'\n[ANALYSIS] === ALL TEXTAREAS FOUND IN DOCUMENT (textarea[aria-label="Description"]): {len(textareas)} ===')
+            if textareas:
+                for ta in textareas:
+                    status = 'HIDDEN' if ta['hidden'] else 'VISIBLE'
+                    location = '*** IN SIDEBAR ***' if ta['inSidebar'] else 'outside sidebar'
+                    content_status = f"has content ({ta['contentLength']} chars)" if ta['hasContent'] else "empty"
+
+                    print(f'[ANALYSIS]   {ta["index"]}. textarea (aria-label="{ta["ariaLabel"]}", offsetHeight={ta["offsetHeight"]}, {content_status})')
+                    print(f'[ANALYSIS]       Location: {location}')
+                    print(f'[ANALYSIS]       Visibility: {status}')
+                    print(f'[ANALYSIS]       Size: {ta["offsetWidth"]}x{ta["offsetHeight"]} at ({ta["rect"]["left"]}, {ta["rect"]["top"]})')
+                    print(f'[ANALYSIS]       Distance from center: {ta["distance"]}px, z-index: {ta["zIndex"]}')
+                    if ta['hasContent']:
+                        print(f'[ANALYSIS]       Content preview: "{ta["contentPreview"]}..."')
+                    print()
+            else:
+                print('[ANALYSIS]   (none found)')
+
+            # Determine which textarea would be selected by current logic
+            if textareas:
+                print('[ANALYSIS] --- TEXTAREA SELECTION ANALYSIS ---')
+                # Simulate current selection logic
+                candidates = [ta for ta in textareas if ta['offsetHeight'] > 0 and ta['offsetWidth'] > 0]
+                if candidates:
+                    # Sort by: hasContent → distance → zIndex
+                    candidates.sort(key=lambda x: (
+                        not x['hasContent'],  # False (has content) comes first
+                        x['distance'],         # Closer to center
+                        -x['zIndex']          # Higher z-index
+                    ))
+                    selected = candidates[0]
+                    print(f'[ANALYSIS] Current logic would select: Textarea {selected["index"]}')
+                    print(f'[ANALYSIS]   Reason: hasContent={selected["hasContent"]}, distance={selected["distance"]}px, zIndex={selected["zIndex"]}')
+                else:
+                    print('[ANALYSIS] Current logic would find NO visible textarea')
+
+                # Show simple visibility-only approach
+                visible_only = [ta for ta in textareas if not ta['hidden'] and ta['offsetHeight'] > 0]
+                if visible_only:
+                    print(f'\n[ANALYSIS] Simple visibility filter would find: {len(visible_only)} textarea(s)')
+                    for ta in visible_only:
+                        print(f'[ANALYSIS]   - Textarea {ta["index"]} (distance={ta["distance"]}px)')
+                print()
 
             # ALL Albums (global search)
             all_albums = result.get('allAlbums', [])
