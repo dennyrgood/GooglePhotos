@@ -198,72 +198,141 @@ def find_injected_name_candidates(soup, target_textarea):
     
     # Find the root of the *active* sidebar panel using the description field as a starting point
     sidebar_root = _find_closest_sidebar_root(target_textarea)
-    
+
     if not sidebar_root:
         print("ERROR: Could not find the active sidebar root (ZPTMcc or YW656b). Aborting search.")
         return []
-    
+
     # Safety check for class existence before printing
     sidebar_class = sidebar_root.get('class')[0] if sidebar_root.get('class') else 'N/A'
     print(f"Scoped search to active sidebar root: <div class='{sidebar_class}...'>")
 
     found_candidates = []
-    
-    # --- Album Name Search (div.DgVY7) REMOVED FROM LIVE SCRIPT ---
-    # We still show the raw data for debugging purposes, but the live script ignores it.
-    all_dgvy7_divs = sidebar_root.find_all('div', class_='DgVY7')
-    if all_dgvy7_divs:
-        print(f"\n[DEBUG] Found {len(all_dgvy7_divs)} primary name (Album) candidates (DgVY7) - IGNORED BY LIVE SCRIPT:")
-        for i, dgvy7_div in enumerate(all_dgvy7_divs):
+
+    # === NEW: Global Album Search (like SUM does) ===
+    all_dgvy7_divs_global = soup.find_all('div', class_='DgVY7')
+    album_candidates = []
+
+    print(f"\n=== ALL ALBUMS FOUND IN DOCUMENT (div.DgVY7 > div.AJM7gb): {len(all_dgvy7_divs_global)} ===")
+    if all_dgvy7_divs_global:
+        for i, dgvy7_div in enumerate(all_dgvy7_divs_global):
             name_div = dgvy7_div.find('div', class_='AJM7gb')
             if name_div and name_div.text:
-                 print(f"  {i+1} (IGNORED): '{name_div.text.strip()}'")
-            else:
-                print(f"  {i+1} (IGNORED): Not found or empty.")
-    # -----------------------------------------------------------------
+                text = name_div.text.strip()
+                is_hidden = is_element_visually_hidden(name_div)
+                in_sidebar = sidebar_root and sidebar_root in [p for p in dgvy7_div.parents]
 
-    # 1. Target: Span-based Names (People/Place Tags)
-    all_y8x4pc_spans = sidebar_root.find_all('span', class_='Y8X4Pc')
+                status_tag = "(VISIBLE/PROCESSED)" if not is_hidden else "(HIDDEN/IGNORED)"
+                location = "*** IN SIDEBAR ***" if in_sidebar else "outside sidebar"
+
+                print(f"  {i+1}. '{text}' ({status_tag}, {location})")
+
+                # Add visible, non-year-prefixed albums to candidates
+                if not is_hidden and not (len(text) >= 4 and text[0:4].isdigit()):
+                    album_candidates.append(text)
+
+        print(f"\nAlbum candidates passed to processing (visible, non-year-prefixed): {album_candidates if album_candidates else '[]'}")
+        found_candidates.extend(album_candidates)
+    else:
+        print("  (none found)")
+
+    # === Albums in sidebar (old approach - for comparison) ===
+    all_dgvy7_divs_sidebar = sidebar_root.find_all('div', class_='DgVY7') if sidebar_root else []
+    if all_dgvy7_divs_sidebar:
+        print(f"\n[COMPARISON] Albums in sidebar (old scoped search): {len(all_dgvy7_divs_sidebar)}")
+        for i, dgvy7_div in enumerate(all_dgvy7_divs_sidebar):
+            name_div = dgvy7_div.find('div', class_='AJM7gb')
+            if name_div and name_div.text:
+                is_hidden = is_element_visually_hidden(name_div)
+                status = "(HIDDEN/IGNORED)" if is_hidden else "(VISIBLE)"
+                print(f"  {i+1}. '{name_div.text.strip()}' {status}")
+
+    # === Face/People Tags (existing code, enhanced) ===
+    all_y8x4pc_spans_global = soup.find_all('span', class_='Y8X4Pc')
     span_candidates = []
-    
-    if all_y8x4pc_spans:
-        # The script looks at the last 5 elements
-        spans_to_check = all_y8x4pc_spans[-5:] 
-        
-        print(f"\nContextual Names (Target span.Y8X4Pc - checking last {len(spans_to_check)} spans):")
-        
-        # Display the raw text found from the targeted elements
-        raw_names_found_total = []
-        
-        for i, span in enumerate(spans_to_check):
+
+    print(f"\n=== ALL FACES FOUND IN DOCUMENT (span.Y8X4Pc): {len(all_y8x4pc_spans_global)} ===")
+    if all_y8x4pc_spans_global:
+        for i, span in enumerate(all_y8x4pc_spans_global):
             text = span.text.strip()
-            
+
             if text:
                 is_hidden = is_element_visually_hidden(span)
-                
-                status_tag = "(VISIBLE/PROCESSED)"
-                if is_hidden:
-                    status_tag = "(HIDDEN/IGNORED)"
-                
-                # Report all names found, but only add visible ones to the candidates list
-                raw_names_found_total.append(text)
-                print(f"  Raw Text {i+1}: '{text}' {status_tag}") 
-                
+                in_sidebar = sidebar_root and sidebar_root in [p for p in span.parents]
+
+                status_tag = "(VISIBLE/PROCESSED)" if not is_hidden else "(HIDDEN/IGNORED)"
+                location = "*** IN SIDEBAR ***" if in_sidebar else "outside sidebar"
+
+                print(f"  {i+1}. '{text}' ({status_tag}, {location})")
+
                 if not is_hidden:
                     span_candidates.append(text)
-        
-        # Print the final list of candidates that will be fed into the simulation
-        print(f"\nCandidates passed to Simulation (filtered): {span_candidates if span_candidates else '[]'}")
-        
-        found_candidates.extend(span_candidates)
-        
-        if not span_candidates:
-             print("  None of the last spans passed the visibility check.")
-    else:
-        print("\nContextual Names (Target span.Y8X4Pc): No matching spans found in scope.")
 
+        print(f"\nFace candidates passed to processing (visible): {span_candidates if span_candidates else '[]'}")
+        found_candidates.extend(span_candidates)
+    else:
+        print("  (none found)")
+
+    # === Faces in sidebar (old approach - for comparison) ===
+    all_y8x4pc_spans_sidebar = sidebar_root.find_all('span', class_='Y8X4Pc') if sidebar_root else []
+    if all_y8x4pc_spans_sidebar:
+        spans_to_check = all_y8x4pc_spans_sidebar[-5:]
+        print(f"\n[COMPARISON] Faces in sidebar last 5 (old scoped search): {len(spans_to_check)}")
+        for i, span in enumerate(spans_to_check):
+            text = span.text.strip()
+            if text:
+                is_hidden = is_element_visually_hidden(span)
+                status = "(HIDDEN/IGNORED)" if is_hidden else "(VISIBLE)"
+                print(f"  {i+1}. '{text}' {status}")
+
+    print(f"\n{'='*50}")
+    print(f"TOTAL CANDIDATES TO PROCESS: {len(found_candidates)}")
+    print(f"Candidates: {found_candidates}")
     print("@"*50)
     return found_candidates
+
+
+def analyze_textareas(soup, sidebar_root):
+    """
+    NEW FUNCTION: Analyze all textareas like SUM does.
+    """
+    print("\n" + "="*50)
+    print("TEXTAREA ANALYSIS")
+    print("="*50)
+
+    all_textareas = soup.find_all('textarea', attrs={'aria-label': 'Description'})
+
+    print(f"\n=== ALL TEXTAREAS FOUND IN DOCUMENT: {len(all_textareas)} ===")
+
+    if not all_textareas:
+        print("  (none found)")
+        return
+
+    for i, ta in enumerate(all_textareas):
+        textarea_id = ta.get('id', '(no id)')
+        textarea_class = ' '.join(ta.get('class', [])) if ta.get('class') else '(no class)'
+        value = (ta.string or '')
+
+        # Normalize whitespace similar to browser behavior
+        value_norm = ' '.join(value.split()).strip()
+
+        is_hidden = is_element_visually_hidden(ta)
+        in_sidebar = sidebar_root and sidebar_root in [p for p in ta.parents]
+
+        status = 'HIDDEN' if is_hidden else 'VISIBLE'
+        location = '*** IN SIDEBAR ***' if in_sidebar else 'outside sidebar'
+        content_status = f"has content ({len(value_norm)} chars)" if value_norm else "empty"
+
+        print(f"\n  {i+1}. textarea (aria-label='Description', {content_status})")
+        print(f"      ID: {textarea_id}")
+        print(f"      Class: {textarea_class}")
+        print(f"      Location: {location}")
+        print(f"      Visibility: {status}")
+        if value_norm:
+            preview = value_norm[:50]
+            print(f"      Content preview: '{preview}...'")
+
+    print("\n" + "="*50)
 
 
 def simulate_name_processing(candidates, current_desc):
@@ -386,20 +455,33 @@ def main():
         print("Error: The 'beautifulsoup4' library is not installed.")
         print("You must install it using: pip install beautifulsoup4")
         sys.exit(1)
-        
-    html_file_path = TARGET_HTML_FILE
-    
+    # 2. Get HTML file path from command line argument or use default
+    if len(sys.argv) > 1:
+        html_file_path = sys.argv[1]
+    else:
+        # Fallback to TARGET_HTML_FILE if it exists (for dump-explorer.py compatibility)
+        try:
+            html_file_path = TARGET_HTML_FILE
+        except NameError:
+            print("Error: No HTML file specified.")
+            print("Usage: python3 da.py <html_file>")
+            sys.exit(1)
+
     # Check if the file exists
     if not os.path.exists(html_file_path):
         print(f"Error: The target file '{html_file_path}' does not exist.")
         sys.exit(1)
         
-    # 2. Run the main analysis functions
+    # 3. Run the main analysis functions
     
     # Find Textarea Info and Current Description
     div_info_list, soup, current_desc, target_textarea = find_textarea_div_info(html_file_path)
     
     if soup:
+        # NEW: Analyze textareas
+        sidebar_root = _find_closest_sidebar_root(target_textarea)
+        analyze_textareas(soup, sidebar_root)
+        
         # Find Injected Name Candidates
         candidates = find_injected_name_candidates(soup, target_textarea)
         
