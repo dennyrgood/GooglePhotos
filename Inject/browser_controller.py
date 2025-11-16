@@ -124,7 +124,7 @@ class BrowserController:
                 elif cmd == 'prev':
                     self._do_prev()
                 elif cmd == 'append_x':
-                    self._do_append_x()
+                    pass
                 elif cmd == 'append_text':
                     try:
                         self._do_append_text(arg)
@@ -885,82 +885,6 @@ class BrowserController:
         except Exception:
             print('[FOCUS] WARNING: textarea did not become active within timeout')
 
-    def _do_append_x(self):
-        """Append 'X' to current description."""
-        try:
-            print('[APPEND_X] Starting...')
-            
-            js_find = """() => {
-    // Helper function to check if element is visually hidden
-    function isElementVisuallyHidden(element) {
-        let current = element;
-        while (current && current.tagName !== 'BODY') {
-            if (current.getAttribute('aria-hidden') === 'true') {
-                return true;
-            }
-            const style = current.getAttribute('style') || '';
-            if (style.toLowerCase().includes('display: none') || style.toLowerCase().includes('display:none')) {
-                return true;
-            }
-            current = current.parentElement;
-        }
-        return false;
-    }
-    
-    // Find all description textareas
-    const textareas = document.querySelectorAll('textarea[aria-label="Description"]');
-    console.log('Found textareas:', textareas.length);
-    
-    // Find the visible one
-    for (const ta of textareas) {
-        if (ta.offsetHeight > 0 && !isElementVisuallyHidden(ta)) {
-            const rect = ta.getBoundingClientRect();
-            const value = (ta.value || '').trim();
-            
-            return {
-                x: rect.left + rect.width / 2,
-                y: rect.top + rect.height / 2,
-                currentValue: value
-            };
-        }
-    }
-    
-    return null;
-}"""
-            
-            result = self.page.evaluate(js_find)
-            if not result:
-                print('[APPEND_X] FAILED - No textarea found')
-                return
-            
-            x = result['x']
-            y = result['y']
-            current = result['currentValue']
-            
-            print(f'[APPEND_X] Textarea at ({x}, {y}), current value: "{current}"')
-            print(f'[APPEND_X] Clicking at ({x}, {y})')
-            self._focus_textarea(x, y)
-            
-            print('[APPEND_X] Pressing End key')
-            self.page.keyboard.press('End')
-            self.page.wait_for_timeout(5)
-            
-            print('[APPEND_X] Typing space')
-            self.page.keyboard.type(' ')
-            self.page.wait_for_timeout(10)
-            
-            print(f'[APPEND_X] SUCCESS - appended space to "{current}"')
-            self._last_description = (current if current else '') + ' '
-            # Ensure cursor is positioned at the end after append X
-            try:
-                self._position_cursor_at_end()
-            except Exception as e:
-                print(f'[APPEND_X] WARNING: _position_cursor_at_end failed: {e}')
-            
-        except Exception as e:
-            print(f'[APPEND_X] ERROR: {e}')
-            import traceback
-            traceback.print_exc()
 
     def _do_append_text(self, text):
         """Append arbitrary text to current description WITHOUT scrolling right panel."""
@@ -1283,12 +1207,6 @@ class BrowserController:
         if not self._running:
             raise RuntimeError('Browser not running')
         self._cmd_queue.put(('prev', None))
-
-    def append_x(self):
-        """Queue append X command."""
-        if not self._running:
-            raise RuntimeError('Browser not running')
-        self._cmd_queue.put(('append_x', None))
 
     def append_text(self, text):
         """Queue append_text command with provided string."""

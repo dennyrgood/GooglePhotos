@@ -34,8 +34,7 @@ class AssistantUI:
         self.next_btn = ttk.Button(nav_frame, text='NEXT →', command=self.next_photo, state='disabled')
         self.next_btn.grid(row=0, column=2, sticky='ew', padx=2)
 
-        self.add_btn = ttk.Button(nav_frame, text='ADD Space', command=self.add_x, state='disabled')
-        self.add_btn.grid(row=0, column=3, sticky='ew', padx=2)
+        # NOTE: "ADD Space" button removed per user request
         
         self.backspace_btn = ttk.Button(nav_frame, text='⌫ BACK', command=self.do_backspace, state='disabled')
         self.backspace_btn.grid(row=0, column=4, sticky='ew', padx=2)
@@ -190,8 +189,7 @@ class AssistantUI:
                 self.prev_photo()
             elif action_type == 'name':
                 self.add_name(action_data)
-            elif action_type == 'space':
-                self.add_x()
+            # 'space' action removed - no-op
             elif action_type == 'backspace':
                 self.do_backspace()
             elif action_type == 'delete_all':
@@ -238,7 +236,6 @@ class AssistantUI:
         self.next_btn.config(state='normal')
         if self.debug_mode:
             self.read_btn.config(state='normal')
-        self.add_btn.config(state='normal')
         self.backspace_btn.config(state='normal')
         self.reload_btn.config(state='normal')
         if self.debug_mode:
@@ -281,9 +278,7 @@ class AssistantUI:
 
         threading.Thread(target=_read, daemon=True).start()
 
-    def add_x(self):
-        """Append X to description."""
-        threading.Thread(target=self.browser.append_x, daemon=True).start()
+    # add_x removed per Visual Studio deletion instructions
 
     def do_backspace(self):
         """Send backspace to browser."""
