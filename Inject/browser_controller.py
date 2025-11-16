@@ -596,7 +596,7 @@ class BrowserController:
                 "if(el && el.tagName && el.tagName.toLowerCase() === 'textarea') { "
                 "el.focus(); el.selectionStart = el.value.length; el.selectionEnd = el.value.length; "
                 "return true; } "
-                "const t = document.querySelector('textarea[aria-label=Description]'); "
+                "const t = document.querySelector('textarea[aria-label=\"Description\"]'); "
                 "if(t){ t.focus(); t.selectionStart = t.value.length; t.selectionEnd = t.value.length; "
                 "return true; } return false; }", 
                 x, y
@@ -700,6 +700,11 @@ class BrowserController:
             
             print(f'[APPEND_X] SUCCESS - appended space to "{current}"')
             self._last_description = (current if current else '') + ' '
+            # Ensure cursor is positioned at the end after append X
+            try:
+                self._position_cursor_at_end()
+            except Exception as e:
+                print(f'[APPEND_X] WARNING: _position_cursor_at_end failed: {e}')
             
         except Exception as e:
             print(f'[APPEND_X] ERROR: {e}')
@@ -807,6 +812,11 @@ class BrowserController:
 
             self._last_description = (current if current else '') + text
             print(f'[APPEND_SUCCESS] Appended {repr(text)} to description')
+            # Ensure cursor is positioned at the end after append
+            try:
+                self._position_cursor_at_end()
+            except Exception as e:
+                print(f'[APPEND_TEXT] WARNING: _position_cursor_at_end failed: {e}')
 
         except Exception as e:
             print(f'[APPEND_TEXT] ERROR: {e}')
@@ -881,12 +891,45 @@ class BrowserController:
             print('[BACKSPACE] Scroll frozen')
 
             self._focus_textarea(x, y)
-            
-            # Position cursor at END before backspacing
-            print('[BACKSPACE] Positioning cursor at END')
-            self.page.keyboard.press('End')
-            self.page.wait_for_timeout(5)
-            
+
+            # Position cursor at END using programmatic selection (more reliable
+            # than sending End key). Then verify the active element and selection
+            # are at the end before sending Backspace. If verification fails,
+            # fall back to End key.
+            print('[BACKSPACE] Positioning cursor at END (programmatic)')
+            try:
+                self._position_cursor_at_end()
+
+                # Verify active element is the description textarea and caret at end
+                try:
+                    self.page.wait_for_function(
+                        """() => {
+                            const a = document.activeElement;
+                            if (!a) return false;
+                            if (a.tagName && a.tagName.toLowerCase() === 'textarea' && a.getAttribute && a.getAttribute('aria-label') === 'Description') {
+                                return a.selectionStart === a.value.length && a.selectionEnd === a.value.length;
+                            }
+                            return false;
+                        }""",
+                        timeout=1500,
+                    )
+                    verified = True
+                except Exception:
+                    verified = False
+
+                if not verified:
+                    print('[BACKSPACE] WARNING: cursor verification failed, falling back to End key')
+                    self.page.keyboard.press('End')
+                    self.page.wait_for_timeout(50)
+
+            except Exception as e:
+                print(f'[BACKSPACE] WARNING: programmatic positioning failed: {e}; falling back to End key')
+                try:
+                    self.page.keyboard.press('End')
+                    self.page.wait_for_timeout(50)
+                except Exception:
+                    pass
+
             print('[BACKSPACE] Sending backspace')
             self.page.keyboard.press('Backspace')
             self.page.wait_for_timeout(15)
@@ -962,7 +1005,7 @@ class BrowserController:
    
             
             print('[DELETE_ALL] Pressing backspace 50 times to clear description')
-            for _ in range(50):
+            for _ in range(150):
                 self.page.keyboard.press('Backspace')
             self.page.wait_for_timeout(5)
             print('[DELETE_ALL] SUCCESS')
