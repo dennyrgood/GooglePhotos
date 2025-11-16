@@ -242,13 +242,14 @@ class BrowserController:
 
         except Exception as e:
             print(f'[CURSOR] ERROR: {e}')
+    
     def _do_dump_analysis(self):
         """Run dump-explorer style analysis on current page."""
         try:
             print('\n' + '='*60)
             print('[ANALYSIS] Starting dump-explorer analysis...')
             print('='*60)
-
+            
             # Execute the analysis JavaScript
             result = self.page.evaluate("""() => {
                 // Helper function to check if element is visually hidden
@@ -266,22 +267,22 @@ class BrowserController:
                     }
                     return false;
                 }
-
+                
                 // Find the active sidebar root
                 const textarea = document.querySelector('textarea');
                 if (!textarea) {
                     return { error: 'No textarea found' };
                 }
-
+                
                 let sidebarRoot = textarea.closest('.ZPTMcc');
                 if (!sidebarRoot) {
                     sidebarRoot = textarea.closest('.YW656b');
                 }
-
+                
                 if (!sidebarRoot) {
                     return { error: 'No sidebar root found' };
                 }
-
+                
                 const results = {
                     sidebarClass: sidebarRoot.className,
                     albums: [],
@@ -296,20 +297,19 @@ class BrowserController:
                         className: textarea.className
                     }
                 };
-
-                // NEW: Analyze ALL textareas in document
+                
+                // Analyze ALL textareas in document
                 const allTextareas = document.querySelectorAll('textarea[aria-label="Description"]');
                 const centerX = window.innerWidth / 2;
                 const centerY = window.innerHeight / 2;
-
+                
                 for (let i = 0; i < allTextareas.length; i++) {
                     const ta = allTextareas[i];
                     const rect = ta.getBoundingClientRect();
                     const value = (ta.value || '').trim();
                     const hidden = isElementVisuallyHidden(ta);
                     const inSidebar = sidebarRoot.contains(ta);
-
-                    // Calculate distance from center
+                    
                     const taCenter = {
                         x: rect.left + rect.width / 2,
                         y: rect.top + rect.height / 2
@@ -318,10 +318,10 @@ class BrowserController:
                         Math.pow(taCenter.x - centerX, 2) + 
                         Math.pow(taCenter.y - centerY, 2)
                     );
-
+                    
                     const style = window.getComputedStyle(ta);
                     const zIndex = parseInt(style.zIndex) || 0;
-
+                    
                     results.textareas.push({
                         index: i + 1,
                         ariaLabel: ta.getAttribute('aria-label'),
@@ -344,8 +344,8 @@ class BrowserController:
                         }
                     });
                 }
-
-                // 1. Find ALL Album Names (div.DgVY7 > div.AJM7gb) in entire document
+                
+                // Find ALL Album Names in entire document
                 const allDgvy7DivsGlobal = document.querySelectorAll('div.DgVY7');
                 for (let i = 0; i < allDgvy7DivsGlobal.length; i++) {
                     const dgvy7Div = allDgvy7DivsGlobal[i];
@@ -358,12 +358,13 @@ class BrowserController:
                             index: i + 1,
                             text: text,
                             hidden: hidden,
-                            inSidebar: inSidebar
+                            inSidebar: inSidebar,
+                            offsetHeight: nameDiv.offsetHeight
                         });
                     }
                 }
-
-                // Find albums ONLY in sidebar (what the script actually uses)
+                
+                // Find albums ONLY in sidebar
                 const allDgvy7Divs = sidebarRoot.querySelectorAll('div.DgVY7');
                 for (let i = 0; i < allDgvy7Divs.length; i++) {
                     const dgvy7Div = allDgvy7Divs[i];
@@ -378,8 +379,8 @@ class BrowserController:
                         });
                     }
                 }
-
-                // 2. Find ALL Face/People Tags (span.Y8X4Pc) in entire document
+                
+                // Find ALL Face/People Tags in entire document
                 const allSpansGlobal = document.querySelectorAll('span.Y8X4Pc');
                 for (let i = 0; i < allSpansGlobal.length; i++) {
                     const span = allSpansGlobal[i];
@@ -396,11 +397,11 @@ class BrowserController:
                         });
                     }
                 }
-
-                // Find faces ONLY in sidebar (what the script actually uses)
+                
+                // Find faces ONLY in sidebar
                 const allSpans = sidebarRoot.querySelectorAll('span.Y8X4Pc');
                 const spansToCheck = Array.from(allSpans).slice(-5);
-
+                
                 for (let i = 0; i < spansToCheck.length; i++) {
                     const span = spansToCheck[i];
                     const text = span.textContent.trim();
@@ -414,21 +415,22 @@ class BrowserController:
                         });
                     }
                 }
-
+                
                 return results;
             }""")
-
+            
             if result.get('error'):
                 print(f'[ANALYSIS] ERROR: {result["error"]}')
                 return
-
+            
             # Print results
             print(f'\n[ANALYSIS] Sidebar Root Class: {result.get("sidebarClass", "N/A")}')
             textarea_info = result.get('textareaInfo', {})
             print(f'[ANALYSIS] Textarea: aria-label="{textarea_info.get("ariaLabel", "N/A")}", id="{textarea_info.get("id", "N/A")}"')
-            print(f'[ANALYSIS] Current Description: "{result.get("currentDescription", "")[:80]}..."')
-
-            # NEW: Print textarea analysis
+            current_description = result.get("currentDescription", "")
+            print(f'[ANALYSIS] Current Description: "{current_description[:80]}..."')
+            
+            # Print textarea analysis
             textareas = result.get('textareas', [])
             print(f'\n[ANALYSIS] === ALL TEXTAREAS FOUND IN DOCUMENT (textarea[aria-label="Description"]): {len(textareas)} ===')
             if textareas:
@@ -436,7 +438,7 @@ class BrowserController:
                     status = 'HIDDEN' if ta['hidden'] else 'VISIBLE'
                     location = '*** IN SIDEBAR ***' if ta['inSidebar'] else 'outside sidebar'
                     content_status = f"has content ({ta['contentLength']} chars)" if ta['hasContent'] else "empty"
-
+                    
                     print(f'[ANALYSIS]   {ta["index"]}. textarea (aria-label="{ta["ariaLabel"]}", offsetHeight={ta["offsetHeight"]}, {content_status})')
                     print(f'[ANALYSIS]       Location: {location}')
                     print(f'[ANALYSIS]       Visibility: {status}')
@@ -447,47 +449,45 @@ class BrowserController:
                     print()
             else:
                 print('[ANALYSIS]   (none found)')
-
-            # Determine which textarea would be selected by current logic
+            
+            # Determine which textarea would be selected
             if textareas:
                 print('[ANALYSIS] --- TEXTAREA SELECTION ANALYSIS ---')
-                # Simulate current selection logic
                 candidates = [ta for ta in textareas if ta['offsetHeight'] > 0 and ta['offsetWidth'] > 0]
                 if candidates:
-                    # Sort by: hasContent → distance → zIndex
                     candidates.sort(key=lambda x: (
-                        not x['hasContent'],  # False (has content) comes first
-                        x['distance'],         # Closer to center
-                        -x['zIndex']          # Higher z-index
+                        not x['hasContent'],
+                        x['distance'],
+                        -x['zIndex']
                     ))
                     selected = candidates[0]
                     print(f'[ANALYSIS] Current logic would select: Textarea {selected["index"]}')
                     print(f'[ANALYSIS]   Reason: hasContent={selected["hasContent"]}, distance={selected["distance"]}px, zIndex={selected["zIndex"]}')
                 else:
                     print('[ANALYSIS] Current logic would find NO visible textarea')
-
-                # Show simple visibility-only approach
+                
                 visible_only = [ta for ta in textareas if not ta['hidden'] and ta['offsetHeight'] > 0]
                 if visible_only:
                     print(f'\n[ANALYSIS] Simple visibility filter would find: {len(visible_only)} textarea(s)')
                     for ta in visible_only:
                         print(f'[ANALYSIS]   - Textarea {ta["index"]} (distance={ta["distance"]}px)')
                 print()
-
-            # ALL Albums (global search)
+            
+            # ALL Albums
             all_albums = result.get('allAlbums', [])
             print(f'\n[ANALYSIS] === ALL ALBUMS FOUND IN DOCUMENT (div.DgVY7 > div.AJM7gb): {len(all_albums)} ===')
             if all_albums:
                 for album in all_albums:
                     status = 'HIDDEN' if album['hidden'] else 'VISIBLE'
                     location = '*** IN SIDEBAR ***' if album['inSidebar'] else 'outside sidebar'
-                    print(f'[ANALYSIS]   {album["index"]}. "{album["text"]}" ({status}, {location})')
+                    height_info = f'offsetHeight={album["offsetHeight"]}'
+                    print(f'[ANALYSIS]   {album["index"]}. "{album["text"]}" ({status}, {location}, {height_info})')
             else:
                 print('[ANALYSIS]   (none found)')
-
-            # Albums in sidebar (what script uses)
+            
+            # Albums in sidebar
             albums = result.get('albums', [])
-            print(f'\n[ANALYSIS] --- ALBUMS IN SIDEBAR (what script would see): {len(albums)} ---')
+            print(f'\n[ANALYSIS] --- ALBUMS IN SIDEBAR (what old script would see): {len(albums)} ---')
             if albums:
                 for album in albums:
                     status = 'HIDDEN/IGNORED' if album['hidden'] else 'VISIBLE/PROCESSED'
@@ -495,8 +495,8 @@ class BrowserController:
                     print(f'[ANALYSIS]   {album["index"]}. "{album["text"]}" ({status}) {marker}')
             else:
                 print('[ANALYSIS]   (none found in sidebar)')
-
-            # ALL Faces (global search)
+            
+            # ALL Faces
             all_faces = result.get('allFaces', [])
             print(f'\n[ANALYSIS] === ALL FACES FOUND IN DOCUMENT (span.Y8X4Pc): {len(all_faces)} ===')
             if all_faces:
@@ -507,10 +507,10 @@ class BrowserController:
                     print(f'[ANALYSIS]   {face["index"]}. "{face["text"]}" ({status}, {location}, {height_info})')
             else:
                 print('[ANALYSIS]   (none found)')
-
-            # Faces in sidebar last 5 (what script uses)
+            
+            # Faces in sidebar
             faces = result.get('faces', [])
-            print(f'\n[ANALYSIS] --- FACES IN SIDEBAR LAST 5 (what script would see): {len(faces)} ---')
+            print(f'\n[ANALYSIS] --- FACES IN SIDEBAR LAST 5 (what old script would see): {len(faces)} ---')
             if faces:
                 for face in faces:
                     status = 'HIDDEN/IGNORED' if face['hidden'] else 'VISIBLE/PROCESSED'
@@ -519,16 +519,95 @@ class BrowserController:
                     print(f'[ANALYSIS]   {face["index"]}. "{face["text"]}" ({status}, {height_info}) {marker}')
             else:
                 print('[ANALYSIS]   (none found in sidebar last 5)')
-
+            
+            # NEW: NAME PROCESSING SIMULATION
+            print(f'\n[ANALYSIS] === NAME PROCESSING SIMULATION ===')
+            
+            # Load special cases
+            try:
+                import json
+                with open('names.json') as f:
+                    data = json.load(f)
+                    special_cases = data.get('special_cases', {})
+            except Exception as e:
+                print(f'[ANALYSIS] WARNING: Could not load names.json: {e}')
+                special_cases = {}
+            
+            # Collect all visible names (faces + albums)
+            visible_names = []
+            for face in all_faces:
+                if not face['hidden'] and face['offsetHeight'] > 0:
+                    visible_names.append(('face', face['text']))
+            for album in all_albums:
+                if not album['hidden'] and album['offsetHeight'] > 0:
+                    visible_names.append(('album', album['text']))
+            
+            if visible_names:
+                desc_normalized = ' '.join(current_description.split()).lower()
+                names_would_add = []
+                
+                for source_type, name in visible_names:
+                    print(f'\n[ANALYSIS] Processing {source_type}: "{name}"')
+                    
+                    # Normalize
+                    name_to_check = ' '.join(name.split())
+                    
+                    # Year/digit prefix check
+                    if name_to_check and len(name_to_check) >= 4 and name_to_check[0:4].isdigit():
+                        print(f'[ANALYSIS]   → Year check: FAIL (starts with {name_to_check[0:4]})')
+                        print(f'[ANALYSIS]   → RESULT: SKIPPED (year-prefixed album)')
+                        continue
+                    
+                    if name_to_check and name_to_check.startswith("0"):
+                        print(f'[ANALYSIS]   → Starts with 0: FAIL')
+                        print(f'[ANALYSIS]   → RESULT: SKIPPED')
+                        continue
+                    
+                    print(f'[ANALYSIS]   → Year check: PASS (not year-prefixed)')
+                    
+                    # Special case mapping
+                    if name_to_check in special_cases:
+                        mapped_name = special_cases[name_to_check]
+                        print(f'[ANALYSIS]   → Special case: "{name_to_check}" → "{mapped_name}"')
+                        name_to_check = mapped_name
+                    else:
+                        print(f'[ANALYSIS]   → Special case: "{name_to_check}" (no mapping)')
+                    
+                    # Duplication check
+                    normalized_check = ' '.join(name_to_check.split()).lower()
+                    if normalized_check in desc_normalized:
+                        print(f'[ANALYSIS]   → Duplication: "{name_to_check}" already in description')
+                        print(f'[ANALYSIS]   → RESULT: SKIPPED')
+                        continue
+                    
+                    if normalized_check in [n.lower() for n in names_would_add]:
+                        print(f'[ANALYSIS]   → Duplication: "{name_to_check}" already in add list')
+                        print(f'[ANALYSIS]   → RESULT: SKIPPED')
+                        continue
+                    
+                    print(f'[ANALYSIS]   → Duplication: NOT in description')
+                    print(f'[ANALYSIS]   → RESULT: >>> WOULD BE ADDED <<<')
+                    names_would_add.append(name_to_check)
+                    desc_normalized += ' ' + normalized_check
+                
+                print(f'\n[ANALYSIS] -' * 30)
+                if names_would_add:
+                    print(f'[ANALYSIS] Final names that would be appended: {names_would_add}')
+                    print(f'[ANALYSIS] Total: {len(names_would_add)} name(s)')
+                else:
+                    print(f'[ANALYSIS] No names would be appended (all filtered out)')
+            else:
+                print('[ANALYSIS] No visible names found to process')
+            
             print('\n' + '='*60)
             print('[ANALYSIS] Analysis complete')
             print('='*60 + '\n')
-
+            
         except Exception as e:
             print(f'[ANALYSIS] ERROR: {e}')
             import traceback
             traceback.print_exc()
-
+    
     def _scroll_right_panel_to_top(self):
         """Scroll the right information panel to the top to ensure description is visible."""
         try:
