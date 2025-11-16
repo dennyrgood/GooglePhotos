@@ -57,14 +57,10 @@ class AssistantUI:
         # Debug buttons (optional) - create only if debug_mode at init, otherwise create lazily
         debug_col = 6
         if self.debug_mode:
-            self.read_btn = ttk.Button(self.nav_frame, text='READ', command=self.read_current, state='disabled')
-            self.read_btn.grid(row=0, column=debug_col, sticky='ew', padx=2)
-            debug_col += 1
-            
             self.dump_btn = ttk.Button(self.nav_frame, text='DUMP', command=self.dump_html, state='disabled')
             self.dump_btn.grid(row=0, column=debug_col, sticky='ew', padx=2)
             debug_col += 1
-            
+
             self.sum_btn = ttk.Button(self.nav_frame, text='SUM', command=self.dump_analysis, state='disabled')
             self.sum_btn.grid(row=0, column=debug_col, sticky='ew', padx=2)
             debug_col += 1
@@ -159,7 +155,8 @@ class AssistantUI:
         for idx, raw in enumerate(number_buttons):
             label = raw
             # Strip the numeric prefix for display and pushing
-            stripped_label = re.sub(r'^\(\d+\)\s*', '', raw).strip()
+            # Do NOT call .strip() here so trailing spaces from names.json are preserved
+            stripped_label = re.sub(r'^\(\d+\)\s*', '', raw)
             pushed = ''.join(ch for ch in stripped_label if ch not in '()') if stripped_label else ''
             
             btn = ttk.Button(self.shortcut_frame, text=label, 
@@ -219,15 +216,8 @@ class AssistantUI:
             else:
                 self.desc_frame.grid()
 
-            # Show or lazily create debug buttons
+            # Show or lazily create debug buttons (READ removed)
             col = self.nav_frame.grid_size()[0]
-            if not hasattr(self, 'read_btn'):
-                self.read_btn = ttk.Button(self.nav_frame, text='READ', command=self.read_current, state='disabled')
-                self.read_btn.grid(row=0, column=col, sticky='ew', padx=2)
-                col += 1
-            else:
-                self.read_btn.grid()
-
             if not hasattr(self, 'dump_btn'):
                 self.dump_btn = ttk.Button(self.nav_frame, text='DUMP', command=self.dump_html, state='disabled')
                 self.dump_btn.grid(row=0, column=col, sticky='ew', padx=2)
@@ -383,21 +373,7 @@ class AssistantUI:
     def prev_photo(self):
         """Go to previous photo."""
         threading.Thread(target=self.browser.goto_prev_photo, daemon=True).start()
-
-    def read_current(self):
-        """Read current description."""
-        def _read():
-            try:
-                print('[READ] Requesting description...')
-                desc = self.browser.read_description(timeout=8.0)
-                msg = desc if desc else '(no description)'
-                if self.desc_label:  # Only update if it exists
-                    self.root.after(0, lambda m=msg: self.desc_label.config(text=m))
-            except Exception as e:
-                print(f'[READ] ERROR: {e}')
-                self.root.after(0, lambda: messagebox.showerror('Error', str(e)))
-
-        threading.Thread(target=_read, daemon=True).start()
+    # read_current removed — READ debug button and handler deleted
 
     # add_x removed per Visual Studio deletion instructions
 
