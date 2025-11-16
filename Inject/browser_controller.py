@@ -191,60 +191,55 @@ class BrowserController:
         """Position cursor at END of description textarea WITHOUT scrolling."""
         try:
             print('[CURSOR] Positioning cursor at END...')
-            
+
             # Use pure JavaScript to find and position cursor - NO clicking, NO key pressing
             result = self.page.evaluate("""() => {
-                const textareas = document.querySelectorAll('textarea[aria-label="Description"]');
-                let candidates = [];
-                const centerX = window.innerWidth / 2;
-                const centerY = window.innerHeight / 2;
-                
-                for (const ta of textareas) {
-                    try {
-                        const rect = ta.getBoundingClientRect();
-                        const isVisible = rect.width > 0 && rect.height > 0;
-                        if (!isVisible) continue;
-                        
-                        const value = (ta.value || '').trim();
-                        const taCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-                        const distance = Math.sqrt(Math.pow(taCenter.x - centerX, 2) + Math.pow(taCenter.y - centerY, 2));
-                        const style = window.getComputedStyle(ta);
-                        const zIndex = parseInt(style.zIndex) || 0;
-                        
-                        candidates.push({ element: ta, value: value, rect: rect, distance: distance, zIndex: zIndex, hasContent: value.length > 0 });
-                    } catch (e) {}
+            // Helper function to check if element is visually hidden
+            function isElementVisuallyHidden(element) {
+                let current = element;
+                while (current && current.tagName !== 'BODY') {
+                    if (current.getAttribute('aria-hidden') === 'true') {
+                        return true;
+                    }
+                    const style = current.getAttribute('style') || '';
+                    if (style.toLowerCase().includes('display: none') || style.toLowerCase().includes('display:none')) {
+                        return true;
+                    }
+                    current = current.parentElement;
                 }
-                
-                if (candidates.length === 0) return null;
-                
-                candidates.sort((a, b) => {
-                    if (a.hasContent !== b.hasContent) return b.hasContent ? 1 : -1;
-                    if (Math.abs(a.distance - b.distance) > 50) return a.distance - b.distance;
-                    return b.zIndex - a.zIndex;
-                });
-                
-                const target = candidates[0];
-                
-                // Focus and position cursor WITHOUT any scrolling
-                target.element.focus();
-                target.element.selectionStart = target.element.value.length;
-                target.element.selectionEnd = target.element.value.length;
-                
-                // Prevent default scroll behavior
-                target.element.scrollTop = target.element.scrollHeight;
-                
-                return {
-                    textLength: target.value.length,
-                    value: target.value,
-                    success: true
-                };
-            }""")
-            
+                return false;
+            }
+
+            // Find all description textareas
+            const textareas = document.querySelectorAll('textarea[aria-label="Description"]');
+
+            // Find the visible one
+            for (const ta of textareas) {
+                if (ta.offsetHeight > 0 && !isElementVisuallyHidden(ta)) {
+                    // Focus and position cursor WITHOUT any scrolling
+                    ta.focus();
+                    ta.selectionStart = ta.value.length;
+                    ta.selectionEnd = ta.value.length;
+
+                    // Prevent default scroll behavior
+                    ta.scrollTop = ta.scrollHeight;
+
+                    return {
+                        textLength: ta.value.length,
+                        value: ta.value,
+                        success: true
+                    };
+                }
+            }
+
+            return null;
+        }""")
+
             if result:
                 print(f'[CURSOR] Positioned cursor at END (text length: {result.get("textLength", 0)})')
             else:
-                print('[CURSOR] No textarea found')
-                
+                print('[CURSOR] No visible textarea found')
+
         except Exception as e:
             print(f'[CURSOR] ERROR: {e}')
     def _do_dump_analysis(self):
@@ -597,11 +592,9 @@ class BrowserController:
             function isElementVisuallyHidden(element) {
                 let current = element;
                 while (current && current.tagName !== 'BODY') {
-                    // Check for aria-hidden="true"
                     if (current.getAttribute('aria-hidden') === 'true') {
                         return true;
                     }
-                    // Check for inline style display: none
                     const style = current.getAttribute('style') || '';
                     if (style.toLowerCase().includes('display: none') || style.toLowerCase().includes('display:none')) {
                         return true;
@@ -610,20 +603,28 @@ class BrowserController:
                 }
                 return false;
             }
-            
-            // Search entire document for face/people tags
+
+            // 1. Search for face/people tags (span.Y8X4Pc)
             const allSpanNames = document.querySelectorAll('span.Y8X4Pc');
-            
-            // Check all spans for visibility
             for (const span of allSpanNames) {
-                // For people/place tags, only check aria-hidden and display:none
-                // Must have content and not be hidden
                 if (span.textContent && !isElementVisuallyHidden(span) && span.offsetHeight > 0) {
                     foundNames.push(span.textContent.trim());
                 }
             }
-            
-            // Return null if nothing is found
+
+            // 2. Search for album names that might be people (div.DgVY7 > div.AJM7gb)
+            const allAlbumDivs = document.querySelectorAll('div.DgVY7');
+            for (const albumDiv of allAlbumDivs) {
+                const nameDiv = albumDiv.querySelector('div.AJM7gb');
+                if (nameDiv && nameDiv.textContent && !isElementVisuallyHidden(nameDiv) && nameDiv.offsetHeight > 0) {
+                    const text = nameDiv.textContent.trim();
+                    // Filter out year-prefixed albums (they're not people names)
+                    if (!text.match(/^\d{4}/)) {
+                        foundNames.push(text);
+                    }
+                }
+            }
+
             return foundNames.length > 0 ? foundNames : null;
         }"""
 
@@ -811,68 +812,46 @@ class BrowserController:
         try:
             print('[SAMPLE] Executing page.evaluate...')
             js = """() => {
+    // Helper function to check if element is visually hidden
+    function isElementVisuallyHidden(element) {
+        let current = element;
+        while (current && current.tagName !== 'BODY') {
+            if (current.getAttribute('aria-hidden') === 'true') {
+                return true;
+            }
+            const style = current.getAttribute('style') || '';
+            if (style.toLowerCase().includes('display: none') || style.toLowerCase().includes('display:none')) {
+                return true;
+            }
+            current = current.parentElement;
+        }
+        return false;
+    }
+    
+    // Find all description textareas
     const textareas = document.querySelectorAll('textarea[aria-label="Description"]');
     console.log('Found textareas:', textareas.length);
     
-    let candidates = [];
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
-    
+            // Find the visible one
     for (let i = 0; i < textareas.length; i++) {
         const ta = textareas[i];
-        const rect = ta.getBoundingClientRect();
-        const value = (ta.value || '').trim();
-        const isVisible = rect.width > 0 && rect.height > 0;
-        
-        if (!isVisible) continue;
-        
-        const taCenter = {
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2
-        };
-        const distance = Math.sqrt(
-            Math.pow(taCenter.x - centerX, 2) + 
-            Math.pow(taCenter.y - centerY, 2)
-        );
-        
-        const style = window.getComputedStyle(ta);
-        const zIndex = parseInt(style.zIndex) || 0;
-        
-        console.log(`Textarea ${i}: visible=${isVisible}, value="${value.substring(0,30)}", distance=${Math.round(distance)}, zIndex=${zIndex}`);
-        
-        candidates.push({
-            element: ta,
-            value: value,
-            distance: distance,
-            zIndex: zIndex,
-            hasContent: value.length > 0
-        });
+
+        // Simple visibility check: offsetHeight > 0 and not hidden
+        if (ta.offsetHeight > 0 && !isElementVisuallyHidden(ta)) {
+            const value = (ta.value || '').trim();
+            console.log(`Selected visible textarea ${i}: value="${value.substring(0,30)}"`);
+            return value;
+        }
     }
     
-    if (candidates.length === 0) {
-        console.log('No visible textareas found');
-        return null;
-    }
-    
-    candidates.sort((a, b) => {
-        if (a.hasContent !== b.hasContent) {
-            return b.hasContent ? 1 : -1;
-        }
-        if (Math.abs(a.distance - b.distance) > 50) {
-            return a.distance - b.distance;
-        }
-        return b.zIndex - a.zIndex;
-    });
-    
-    const selected = candidates[0];
-    console.log('Selected textarea with value:', selected.value);
-    return selected.value;
+    console.log('No visible textarea found');
+    return null;
 }"""
-            
+
             result = self.page.evaluate(js)
             print(f'[SAMPLE] Result: {repr(result)[:100]}')
             return result
-            
+
         except Exception as e:
             print(f'[SAMPLE] ERROR: {e}')
             return None
@@ -912,61 +891,41 @@ class BrowserController:
             print('[APPEND_X] Starting...')
             
             js_find = """() => {
+    // Helper function to check if element is visually hidden
+    function isElementVisuallyHidden(element) {
+        let current = element;
+        while (current && current.tagName !== 'BODY') {
+            if (current.getAttribute('aria-hidden') === 'true') {
+                return true;
+            }
+            const style = current.getAttribute('style') || '';
+            if (style.toLowerCase().includes('display: none') || style.toLowerCase().includes('display:none')) {
+                return true;
+            }
+            current = current.parentElement;
+        }
+        return false;
+    }
+    
+    // Find all description textareas
     const textareas = document.querySelectorAll('textarea[aria-label="Description"]');
     console.log('Found textareas:', textareas.length);
     
-    let candidates = [];
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
-    
+    // Find the visible one
     for (const ta of textareas) {
-        const rect = ta.getBoundingClientRect();
-        const isVisible = rect.width > 0 && rect.height > 0;
-        const value = (ta.value || '').trim();
-        
-        if (!isVisible) continue;
-        
-        const taCenter = {
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2
-        };
-        const distance = Math.sqrt(
-            Math.pow(taCenter.x - centerX, 2) + 
-            Math.pow(taCenter.y - centerY, 2)
-        );
-        const style = window.getComputedStyle(ta);
-        const zIndex = parseInt(style.zIndex) || 0;
-        
-        candidates.push({
-            element: ta,
-            value: value,
-            rect: rect,
-            distance: distance,
-            zIndex: zIndex,
-            hasContent: value.length > 0
-        });
+        if (ta.offsetHeight > 0 && !isElementVisuallyHidden(ta)) {
+            const rect = ta.getBoundingClientRect();
+            const value = (ta.value || '').trim();
+            
+            return {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+                currentValue: value
+            };
+        }
     }
     
-    if (candidates.length === 0) {
-        console.log('No visible textareas');
-        return null;
-    }
-    
-    candidates.sort((a, b) => {
-        if (a.hasContent !== b.hasContent) return b.hasContent ? 1 : -1;
-        if (Math.abs(a.distance - b.distance) > 50) return a.distance - b.distance;
-        return b.zIndex - a.zIndex;
-    });
-    
-    const target = candidates[0];
-    const rect = target.rect;
-    console.log('Selected textarea at:', rect, 'value:', target.value);
-    
-    return {
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2,
-        currentValue: target.value
-    };
+    return null;
 }"""
             
             result = self.page.evaluate(js_find)
@@ -1008,40 +967,40 @@ class BrowserController:
         try:
             print(f'[APPEND_TEXT] Starting append of: {repr(text)[:50]}')
             js_find = """() => {
-    const textareas = document.querySelectorAll('textarea[aria-label="Description"]');
-    
-    let candidates = [];
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
-    
-    for (const ta of textareas) {
-        try {
-            const rect = ta.getBoundingClientRect();
-            const isVisible = rect.width > 0 && rect.height > 0;
-            if (!isVisible) continue;
-            
-            const value = (ta.value || '').trim();
-            const taCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-            const distance = Math.sqrt(Math.pow(taCenter.x - centerX, 2) + Math.pow(taCenter.y - centerY, 2));
-            const style = window.getComputedStyle(ta);
-            const zIndex = parseInt(style.zIndex) || 0;
-            
-            candidates.push({ element: ta, value: value, rect: rect, distance: distance, zIndex: zIndex, hasContent: value.length > 0 });
-        } catch (e) {}
+    // Helper function to check if element is visually hidden
+    function isElementVisuallyHidden(element) {
+        let current = element;
+        while (current && current.tagName !== 'BODY') {
+            if (current.getAttribute('aria-hidden') === 'true') {
+                return true;
+            }
+            const style = current.getAttribute('style') || '';
+            if (style.toLowerCase().includes('display: none') || style.toLowerCase().includes('display:none')) {
+                return true;
+            }
+            current = current.parentElement;
+        }
+        return false;
     }
     
-    if (candidates.length === 0) return null;
+    // Find all description textareas
+    const textareas = document.querySelectorAll('textarea[aria-label="Description"]');
     
-    candidates.sort((a, b) => {
-        if (a.hasContent !== b.hasContent) return b.hasContent ? 1 : -1;
-        if (Math.abs(a.distance - b.distance) > 50) return a.distance - b.distance;
-        return b.zIndex - a.zIndex;
-    });
+    // Find the visible one
+    for (const ta of textareas) {
+        if (ta.offsetHeight > 0 && !isElementVisuallyHidden(ta)) {
+            const rect = ta.getBoundingClientRect();
+            const value = (ta.value || '').trim();
+            
+            return {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+                currentValue: value
+            };
+        }
+    }
     
-    const target = candidates[0];
-    const rect = target.rect;
-    
-    return { x: rect.left + rect.width/2, y: rect.top + rect.height/2, currentValue: target.value };
+    return null;
 }"""
 
             result = self.page.evaluate(js_find)
@@ -1120,38 +1079,40 @@ class BrowserController:
             print('[BACKSPACE] Starting...')
             
             js_find = """() => {
-    const textareas = document.querySelectorAll('textarea[aria-label="Description"]');
-    let candidates = [];
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
-    
-    for (const ta of textareas) {
-        try {
-            const rect = ta.getBoundingClientRect();
-            const isVisible = rect.width > 0 && rect.height > 0;
-            if (!isVisible) continue;
-            
-            const value = (ta.value || '').trim();
-            const taCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-            const distance = Math.sqrt(Math.pow(taCenter.x - centerX, 2) + Math.pow(taCenter.y - centerY, 2));
-            const style = window.getComputedStyle(ta);
-            const zIndex = parseInt(style.zIndex) || 0;
-            
-            candidates.push({ element: ta, value: value, rect: rect, distance: distance, zIndex: zIndex, hasContent: value.length > 0 });
-        } catch (e) {}
+    // Helper function to check if element is visually hidden
+    function isElementVisuallyHidden(element) {
+        let current = element;
+        while (current && current.tagName !== 'BODY') {
+            if (current.getAttribute('aria-hidden') === 'true') {
+                return true;
+            }
+            const style = current.getAttribute('style') || '';
+            if (style.toLowerCase().includes('display: none') || style.toLowerCase().includes('display:none')) {
+                return true;
+            }
+            current = current.parentElement;
+        }
+        return false;
     }
     
-    if (candidates.length === 0) return null;
+    // Find all description textareas
+    const textareas = document.querySelectorAll('textarea[aria-label="Description"]');
     
-    candidates.sort((a, b) => {
-        if (a.hasContent !== b.hasContent) return b.hasContent ? 1 : -1;
-        if (Math.abs(a.distance - b.distance) > 50) return a.distance - b.distance;
-        return b.zIndex - a.zIndex;
-    });
+    // Find the visible one
+    for (const ta of textareas) {
+        if (ta.offsetHeight > 0 && !isElementVisuallyHidden(ta)) {
+            const rect = ta.getBoundingClientRect();
+            const value = (ta.value || '').trim();
+            
+            return {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+                currentValue: value
+            };
+        }
+    }
     
-    const target = candidates[0];
-    const rect = target.rect;
-    return { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+    return null;
 }"""
 
             result = self.page.evaluate(js_find)
@@ -1249,38 +1210,40 @@ class BrowserController:
             print('[DELETE_ALL] Starting...')
             
             js_find = """() => {
-    const textareas = document.querySelectorAll('textarea[aria-label="Description"]');
-    let candidates = [];
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
-    
-    for (const ta of textareas) {
-        try {
-            const rect = ta.getBoundingClientRect();
-            const isVisible = rect.width > 0 && rect.height > 0;
-            if (!isVisible) continue;
-            
-            const value = (ta.value || '').trim();
-            const taCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-            const distance = Math.sqrt(Math.pow(taCenter.x - centerX, 2) + Math.pow(taCenter.y - centerY, 2));
-            const style = window.getComputedStyle(ta);
-            const zIndex = parseInt(style.zIndex) || 0;
-            
-            candidates.push({ element: ta, value: value, rect: rect, distance: distance, zIndex: zIndex, hasContent: value.length > 0 });
-        } catch (e) {}
+    // Helper function to check if element is visually hidden
+    function isElementVisuallyHidden(element) {
+        let current = element;
+        while (current && current.tagName !== 'BODY') {
+            if (current.getAttribute('aria-hidden') === 'true') {
+                return true;
+            }
+            const style = current.getAttribute('style') || '';
+            if (style.toLowerCase().includes('display: none') || style.toLowerCase().includes('display:none')) {
+                return true;
+            }
+            current = current.parentElement;
+        }
+        return false;
     }
     
-    if (candidates.length === 0) return null;
+    // Find all description textareas
+    const textareas = document.querySelectorAll('textarea[aria-label="Description"]');
     
-    candidates.sort((a, b) => {
-        if (a.hasContent !== b.hasContent) return b.hasContent ? 1 : -1;
-        if (Math.abs(a.distance - b.distance) > 50) return a.distance - b.distance;
-        return b.zIndex - a.zIndex;
-    });
+    // Find the visible one
+    for (const ta of textareas) {
+        if (ta.offsetHeight > 0 && !isElementVisuallyHidden(ta)) {
+            const rect = ta.getBoundingClientRect();
+            const value = (ta.value || '').trim();
+            
+            return {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+                currentValue: value
+            };
+        }
+    }
     
-    const target = candidates[0];
-    const rect = target.rect;
-    return { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+    return null;
 }"""
 
             result = self.page.evaluate(js_find)
