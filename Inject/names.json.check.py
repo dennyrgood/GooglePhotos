@@ -5,17 +5,19 @@ check_names.py
 Checks the "names" section of a JSON-like file for:
  - JSON parse errors (often caused by missing commas)
  - Missing commas between array entries (line-based heuristic)
- - Duplicate letters used inside parentheses (e.g. "(D)ennis")
+ - Duplicate letters used inside parentheses (e.g. "(D)ennis" -> "d")
  - Duplicate numbers used inside parentheses (e.g. "(1) Dennis")
+ - Reports entries with no parenthesized token
 
 Usage:
     python check_names.py path/to/file.json
 or
     cat file.json | python check_names.py -
 
-If the JSON is invalid (for example because of missing commas), the script will
-attempt to locate the "names" array in the raw text and run line-based checks
-to help you find the problem lines.
+Exit codes:
+  0 - OK (no problems found)
+  1 - Problems found (duplicates, missing paren tokens, or comma heuristics)
+  2 - Fatal (cannot locate "names" array or other unrecoverable error)
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ import argparse
 import json
 import sys
 import re
-from collections import defaultdict, Counter
+from collections import defaultdict
 from typing import List, Tuple, Optional
 
 
@@ -35,10 +37,6 @@ def load_text(path: str) -> str:
 
 
 def try_parse_json(text: str) -> Tuple[Optional[dict], Optional[str]]:
-    """
-    Try to parse JSON. On success return (obj, None).
-    On failure return (None, error_message).
-    """
     try:
         obj = json.loads(text)
         return obj, None
@@ -47,20 +45,12 @@ def try_parse_json(text: str) -> Tuple[Optional[dict], Optional[str]]:
 
 
 def find_bracket_block(text: str, key: str) -> Optional[Tuple[int, int, str]]:
-    """
-    Find the bracketed block for a top-level key like "names": [ ... ].
-    Returns (start_index_of_block, end_index_exclusive, block_text) or None.
-    This function attempts to handle quotes/escapes so it can find the closing
-    bracket even when the JSON is syntactically incorrect (e.g. missing commas).
-    """
-    # find the key
     m = re.search(r'"' + re.escape(key) + r'"\s*:\s*\[', text)
     if not m:
         return None
     start = text.find('[', m.end() - 1)
     if start == -1:
         return None
-
     i = start
     depth = 0
     in_string = False
@@ -82,7 +72,6 @@ def find_bracket_block(text: str, key: str) -> Optional[Tuple[int, int, str]]:
             elif ch == ']':
                 depth -= 1
                 if depth == 0:
-                    # include the closing bracket
                     end = i + 1
                     return start, end, text[start:end]
         i += 1
@@ -90,25 +79,11 @@ def find_bracket_block(text: str, key: str) -> Optional[Tuple[int, int, str]]:
 
 
 def extract_array_string_entries(block_text: str) -> List[Tuple[str, int, int, str]]:
-    """
-    From the raw block text (starting with '[' and ending with ']'),
-    return a list of tuples (string_value, match_start, match_end, trailing_chars)
-    representing each double-quoted string literal found inside the block and the
-    characters that follow it on the same line (for comma detection).
-    This is a heuristic that works for the typical layout:
-        "something",   (maybe trailing spaces)
-    Each entry is expected to be on a single line in most cases.
-    """
     entries = []
-    # Find double-quoted JSON string literals
-    # This regex matches the closing quote as well; it doesn't validate escapes fully,
-    # but it's good enough for the typical cases here.
     pattern = re.compile(r'"((?:\\.|[^"\\])*)"', re.DOTALL)
     for m in pattern.finditer(block_text):
         s = m.group(1)
-        # Determine what characters follow the closing quote on the same line (up to newline)
         after_start = m.end()
-        # Find end of line
         nl = block_text.find('\n', after_start)
         if nl == -1:
             nl = len(block_text)
@@ -118,57 +93,43 @@ def extract_array_string_entries(block_text: str) -> List[Tuple[str, int, int, s
 
 
 def check_missing_commas_in_block(block_text: str) -> List[Tuple[int, str]]:
-    """
-    Heuristic: inspect the block line-by-line and report lines that contain a quoted
-    string literal but do not have a trailing comma (and are not the last item).
-    Returns a list of tuples (line_number, line_text) for suspect lines.
-    """
     lines = block_text.splitlines()
     suspects = []
-    # We'll detect lines that contain a double-quoted string and determine whether it ends with a comma.
-    # Find all lines that look like they have an entry string.
     entry_line_indices = []
     for idx, line in enumerate(lines):
         if '"' in line:
-            # crude check to see if it contains a JSON-like quoted string
-            # ignore lines that are only brackets
-            if re.search(r'"\s*[:\]]', line):  # skip keys or awkward things
-                pass
-            else:
-                # only consider lines with at least one double-quoted string not followed immediately by :
-                if re.search(r'"((?:\\.|[^"\\])*)"', line):
-                    entry_line_indices.append(idx)
-    # For each entry line except the last, check for trailing comma
+            # crude filter: ignore lines that look like object key lines (":")
+            if re.search(r'"\s*:', line):
+                continue
+            # if the line contains a quoted string literal, consider it an entry line
+            if re.search(r'"((?:\\.|[^"\\])*)"', line):
+                entry_line_indices.append(idx)
     for i, idx in enumerate(entry_line_indices):
         if i == len(entry_line_indices) - 1:
-            # last entry in the block: it should NOT have a trailing comma (JSON forbids trailing commas)
-            # but we won't flag missing comma here; we will flag an unexpected trailing comma later below
+            # last entry: should not have trailing comma
+            line = lines[idx]
+            last_quote = line.rfind('"')
+            after = line[last_quote + 1:].strip()
+            if after.startswith(','):
+                suspects.append((idx + 1, line))
             continue
         line = lines[idx]
-        # Determine if there is a comma after the closing quote on this line
-        # Find the last closing quote on the line
         last_quote = line.rfind('"')
         after = line[last_quote + 1:].strip()
         if not after.startswith(','):
-            suspects.append((idx + 1, line))  # human-friendly 1-based line number
-    # Also check for unexpected comma on the last entry line (trailing comma)
-    if entry_line_indices:
-        last_idx = entry_line_indices[-1]
-        last_line = lines[last_idx]
-        last_quote = last_line.rfind('"')
-        after = last_line[last_quote + 1:].strip()
-        if after.startswith(','):
-            suspects.append((last_idx + 1, last_line))
+            suspects.append((idx + 1, line))
     return suspects
 
 
 def analyze_parsed_names(names: List[str]) -> Tuple[dict, dict, List[int]]:
     """
-    Given a parsed list of name strings, extract the first parenthesized token
-    (if any) from each name and tally letter and numeric tokens. Returns:
-      letter_counts: mapping letter -> list of indices (0-based) where it appears
-      number_counts: mapping num -> list of indices where it appears
-      no_paren_indices: list of indices that had no parenthesized token found
+    Extract parenthesized tokens and classify them:
+      - numeric tokens (all digits) -> number_map
+      - letter tokens: extract the first alphabetical character (case-insensitive) -> letter_map
+      - if no parenthesized token found -> no_paren list
+
+    Returns (letter_map, number_map, no_paren_indices)
+    where letter_map: key->list of indices, number_map: key->list of indices
     """
     letter_map = defaultdict(list)
     number_map = defaultdict(list)
@@ -186,20 +147,70 @@ def analyze_parsed_names(names: List[str]) -> Tuple[dict, dict, List[int]]:
         if token == "":
             no_paren.append(idx)
             continue
-        # If token is single digit or multi-digit number, treat as number
+        # numeric tokens
         if token.isdigit():
             number_map[token].append(idx)
-        else:
-            # single letter or more: reduce to single letter if length>1? We'll treat the whole token,
-            # but commonly it's one letter like "D" or "d".
-            # Use lowercase for case-insensitive comparison.
-            key = token.lower()
+            continue
+        # find first alphabetical character in token to use as the "initial"
+        alpha_m = re.search(r'[A-Za-z]', token)
+        if alpha_m:
+            key = alpha_m.group(0).lower()
             letter_map[key].append(idx)
+        else:
+            # token is non-empty but has no alphas and is not pure digits -> store as "other"
+            # treat as letter-like key using the whole token lowercased
+            letter_map[token.lower()].append(idx)
     return letter_map, number_map, no_paren
 
 
 def format_entries_for_report(names: List[str], indices: List[int]) -> List[str]:
     return [f"{i+1}: {names[i]!r}" for i in indices]
+
+
+def report_from_parsed(names: List[str]) -> int:
+    """
+    Analyze parsed names list and print reports. Returns non-zero if issues found.
+    """
+    letter_map, number_map, no_paren = analyze_parsed_names(names)
+    dup_letters = {k: v for k, v in letter_map.items() if len(v) > 1}
+    dup_numbers = {k: v for k, v in number_map.items() if len(v) > 1}
+
+    problems_found = 0
+
+    print(f"Found {len(names)} entries in 'names' array.\n")
+
+    if dup_letters:
+        problems_found += 1
+        print("Duplicate letter tokens (case-insensitive) detected:")
+        for k, idxs in sorted(dup_letters.items()):
+            print(f"  '{k}' used {len(idxs)} time(s):")
+            for t in format_entries_for_report(names, idxs):
+                print(f"    {t}")
+        print()
+    else:
+        print("No duplicate letter tokens detected.\n")
+
+    if dup_numbers:
+        problems_found += 1
+        print("Duplicate numeric tokens detected:")
+        for k, idxs in sorted(dup_numbers.items(), key=lambda kv: kv[0]):
+            print(f"  '{k}' used {len(idxs)} time(s):")
+            for t in format_entries_for_report(names, idxs):
+                print(f"    {t}")
+        print()
+    else:
+        print("No duplicate numeric tokens detected.\n")
+
+    if no_paren:
+        problems_found += 1
+        print("Entries with no parenthesized token (these may be missing initials/markers):")
+        for i in no_paren:
+            print(f"  {i+1}: {names[i]!r}")
+        print()
+    else:
+        print("All entries contain a parenthesized token.\n")
+
+    return 1 if problems_found else 0
 
 
 def main():
@@ -212,8 +223,7 @@ def main():
     if parsed is None:
         print("JSON parse error:")
         print(err)
-        print()
-        print("Attempting heuristic analysis on the raw text...")
+        print("\nAttempting heuristic analysis on the raw text...\n")
 
         block = find_bracket_block(text, "names")
         if not block:
@@ -221,6 +231,7 @@ def main():
             sys.exit(2)
         start, end, block_text = block
         print(f"'names' array located at text indices {start}:{end}. Inspecting block lines for missing/extra commas...\n")
+
         suspects = check_missing_commas_in_block(block_text)
         if suspects:
             print("Suspect lines (line numbers are relative to the 'names' block):")
@@ -229,51 +240,25 @@ def main():
             print("\nNotes:")
             print(" - Lines that contain a string entry but do not end with a comma (except the last entry) are flagged.")
             print(" - The last entry in the array should NOT have a trailing comma; if it does, it's flagged.")
+            print()
         else:
-            print("No obvious missing/extra-commas found by the line heuristic.")
-        # Also try to extract string entries and analyze duplicated parenthesized tokens from the raw block
+            print("No obvious missing/extra-commas found by the line heuristic.\n")
+
         raw_entries = extract_array_string_entries(block_text)
         names_list = [e[0] for e in raw_entries]
         if not names_list:
-            print("\nNo string entries were found inside the names block.")
+            print("No string entries were found inside the names block (heuristic).")
             sys.exit(2)
-        print(f"\nFound {len(names_list)} entries inside the 'names' block (heuristic). Checking duplicates...")
-        letter_map, number_map, no_paren = analyze_parsed_names(names_list)
-        has_any = False
-        # letter duplicates
-        dup_letters = {k: v for k, v in letter_map.items() if len(v) > 1}
-        if dup_letters:
-            has_any = True
-            print("\nDuplicate letters found (case-insensitive):")
-            for k, idxs in sorted(dup_letters.items()):
-                entries_text = format_entries_for_report(names_list, idxs)
-                print(f"  '{k}' appears {len(idxs)} times in entries:")
-                for t in entries_text:
-                    print(f"    {t}")
+        print(f"Found {len(names_list)} string entries inside the 'names' block (heuristic). Checking duplicates...\n")
+        status = report_from_parsed(names_list)
+        if status:
+            print("Problems found by heuristic analysis. Fix the flagged entries and re-run.")
+            sys.exit(1)
         else:
-            print("\nNo duplicate letters found by heuristic.")
-        # number duplicates
-        dup_numbers = {k: v for k, v in number_map.items() if len(v) > 1}
-        if dup_numbers:
-            has_any = True
-            print("\nDuplicate numbers found:")
-            for k, idxs in sorted(dup_numbers.items(), key=lambda iv: iv[0]):
-                entries_text = format_entries_for_report(names_list, idxs)
-                print(f"  '{k}' appears {len(idxs)} times in entries:")
-                for t in entries_text:
-                    print(f"    {t}")
-        else:
-            print("\nNo duplicate numbers found by heuristic.")
-        if no_paren:
-            print("\nEntries with no parenthesized token detected (indices shown):")
-            for i in no_paren:
-                print(f"  {i+1}: {names_list[i]!r}")
-        if not has_any:
-            print("\nNo duplicate initials or numbers detected by the heuristic.")
-        print("\nBecause the input JSON failed to parse, please inspect the flagged lines for missing commas or other syntax issues.")
-        sys.exit(1)
+            print("No duplicate letters/numbers detected by heuristic analysis.")
+            sys.exit(0)
 
-    # If we reach here, JSON parsed successfully.
+    # JSON parsed successfully
     if "names" not in parsed:
         print("The JSON parsed successfully but does not contain a top-level 'names' key.")
         sys.exit(2)
@@ -283,57 +268,28 @@ def main():
         print("The 'names' key exists but is not an array.")
         sys.exit(2)
 
-    print(f"Parsed JSON successfully. Found {len(names)} 'names' entries.\n")
+    status = report_from_parsed(names)
 
-    # Analyze duplicates
-    letter_map, number_map, no_paren = analyze_parsed_names(names)
-
-    dup_letters = {k: v for k, v in letter_map.items() if len(v) > 1}
-    dup_numbers = {k: v for k, v in number_map.items() if len(v) > 1}
-
-    if dup_letters:
-        print("Duplicate letters (case-insensitive) detected:")
-        for k, idxs in sorted(dup_letters.items()):
-            print(f"  '{k}' used {len(idxs)} times:")
-            for i in idxs:
-                print(f"    {i+1}: {names[i]!r}")
-    else:
-        print("No duplicate letters detected.")
-
-    print()
-
-    if dup_numbers:
-        print("Duplicate numbers detected:")
-        for k, idxs in sorted(dup_numbers.items(), key=lambda kv: kv[0]):
-            print(f"  '{k}' used {len(idxs)} times:")
-            for i in idxs:
-                print(f"    {i+1}: {names[i]!r}")
-    else:
-        print("No duplicate numbers detected.")
-
-    print()
-
-    if no_paren:
-        print("Entries with no parenthesized token (these may be missing initials/markers):")
-        for i in no_paren:
-            print(f"  {i+1}: {names[i]!r}")
-    else:
-        print("All entries contain at least one parenthesized token.")
-
-    # Additional line-based check for missing commas even if JSON parsed (useful for style / trailing comma issues)
+    # Also run the line-based comma/style heuristic on the raw block (useful for trailing commas)
     block = find_bracket_block(text, "names")
     if block:
         _, _, block_text = block
         suspects = check_missing_commas_in_block(block_text)
         if suspects:
-            print("\nLine-based comma/style issues found in the 'names' block (line numbers relative to block):")
+            print("Line-based comma/style issues found in the 'names' block (line numbers relative to block):")
             for ln, line in suspects:
                 print(f"  line {ln}: {line.rstrip()!s}")
             print("Note: When JSON parsed successfully, these are usually style issues (like an unexpected trailing comma).")
+            status = 1 if status == 0 else status
         else:
-            print("\nNo line-based comma/style issues detected in the raw 'names' block.")
+            print("No line-based comma/style issues detected in the raw 'names' block.")
 
-    print("\nDone.")
+    if status:
+        print("\nDone — problems were detected.")
+        sys.exit(1)
+    else:
+        print("\nDone — no problems detected.")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
