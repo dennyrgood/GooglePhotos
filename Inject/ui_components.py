@@ -32,49 +32,47 @@ class AssistantUI:
         # keep a reference so other methods can add/remove debug buttons later
         self.nav_frame = nav_frame
 
-        self.launch_default_btn = ttk.Button(nav_frame, text='LAUNCH', 
-                                              command=lambda: self.launch_with_mode('default'),
-                                              width=8)
+        self.launch_default_btn = ttk.Button(nav_frame, text='GO', 
+                                              command=lambda: self.launch_with_mode('default'))
         self.launch_default_btn.grid(row=0, column=0, sticky='ew', padx=1)
 
-        self.prev_btn = ttk.Button(nav_frame, text='← PREV', command=self.prev_photo, 
-                                    state='disabled', width=8)
+        self.prev_btn = ttk.Button(nav_frame, text='◀', command=self.prev_photo, 
+                                    state='disabled')
         self.prev_btn.grid(row=0, column=1, sticky='ew', padx=1)
 
-        self.next_btn = ttk.Button(nav_frame, text='NEXT →', command=self.next_photo, 
-                                    state='disabled', width=8)
+        self.next_btn = ttk.Button(nav_frame, text='▶', command=self.next_photo, 
+                                    state='disabled')
         self.next_btn.grid(row=0, column=2, sticky='ew', padx=1)
 
         # DEBUG toggle button (always visible)
-        self.debug_toggle_btn = ttk.Button(nav_frame, text='DEBUG', command=self.toggle_debug,
-                                            width=8)
+        self.debug_toggle_btn = ttk.Button(nav_frame, text='DBG', command=self.toggle_debug)
         self.debug_toggle_btn.grid(row=0, column=3, sticky='ew', padx=1)
         
         # Set initial button appearance based on debug_mode
         if self.debug_mode:
             try:
-                self.debug_toggle_btn.config(text='DEBUG ✓', style='Accent.TButton')
+                self.debug_toggle_btn.config(text='DBG ✓', style='Accent.TButton')
             except:
-                self.debug_toggle_btn.config(text='DEBUG ✓')  # Fallback if style not available
+                self.debug_toggle_btn.config(text='DBG ✓')  # Fallback if style not available
 
-        self.backspace_btn = ttk.Button(nav_frame, text='⌫ BACK', command=self.do_backspace, 
-                                        state='disabled', width=8)
+        self.backspace_btn = ttk.Button(nav_frame, text='⌫', command=self.do_backspace, 
+                                        state='disabled')
         self.backspace_btn.grid(row=0, column=4, sticky='ew', padx=1)
         
-        self.reload_btn = ttk.Button(nav_frame, text='↻ RELOAD', command=self.reload_names, 
-                                     state='disabled', width=8)
+        self.reload_btn = ttk.Button(nav_frame, text='↻', command=self.reload_names, 
+                                     state='disabled')
         self.reload_btn.grid(row=0, column=5, sticky='ew', padx=1)
         
         # Debug buttons (optional) - create only if debug_mode at init, otherwise create lazily
         debug_col = 6
         if self.debug_mode:
-            self.dump_btn = ttk.Button(self.nav_frame, text='DUMP', command=self.dump_html, 
-                                       state='disabled', width=6)
+            self.dump_btn = ttk.Button(self.nav_frame, text='DMP', command=self.dump_html, 
+                                       state='disabled')
             self.dump_btn.grid(row=0, column=debug_col, sticky='ew', padx=1)
             debug_col += 1
 
             self.sum_btn = ttk.Button(self.nav_frame, text='SUM', command=self.dump_analysis, 
-                                      state='disabled', width=6)
+                                      state='disabled')
             self.sum_btn.grid(row=0, column=debug_col, sticky='ew', padx=1)
             debug_col += 1
         
@@ -135,9 +133,15 @@ class AssistantUI:
         root.update_idletasks()
         window_width = root.winfo_reqwidth()
         window_height = root.winfo_reqheight()
+        
+        # Limit maximum width to 85% of screen width
+        # max_width = int(screen_width * 0.85)
+        # if window_width > max_width:
+        #     window_width = max_width
+        
         x_position = (screen_width - window_width) // 2
         y_position = screen_height - window_height - 50  # 50px from bottom for taskbar
-        root.geometry(f'+{x_position}+{y_position}')
+        root.geometry(f'{window_width}x{window_height}+{x_position}+{y_position}')
     
     def _create_name_buttons(self):
         """Create name shortcut buttons from keystroke handler's names list.
@@ -164,8 +168,7 @@ class AssistantUI:
             
             btn = ttk.Button(self.shortcut_frame, text=label, 
                             command=(lambda p=pushed: self.add_name(p)), 
-                            state='disabled' if not self.browser._running else 'normal',
-                            width=10)
+                            state='disabled' if not self.browser._running else 'normal')
             btn.grid(row=0, column=idx, sticky='ew', padx=1, pady=1)
             self.name_buttons.append(btn)
         
@@ -183,8 +186,7 @@ class AssistantUI:
             
             btn = ttk.Button(self.shortcut_frame, text=label, 
                             command=(lambda p=pushed: self.add_name(p)), 
-                            state='disabled' if not self.browser._running else 'normal',
-                            width=12)
+                            state='disabled' if not self.browser._running else 'normal')
             btn.grid(row=1, column=idx, sticky='ew', padx=1, pady=1)
             self.name_buttons.append(btn)
         
@@ -217,9 +219,9 @@ class AssistantUI:
         if self.debug_mode:
             print('[DEBUG] Debug mode ENABLED')
             try:
-                self.debug_toggle_btn.config(text='DEBUG ✓', style='Accent.TButton')
+                self.debug_toggle_btn.config(text='DBG ✓', style='Accent.TButton')
             except:
-                self.debug_toggle_btn.config(text='DEBUG ✓')
+                self.debug_toggle_btn.config(text='DBG ✓')
 
             # Create photo label if it doesn't exist
             if not self.photo_label:
@@ -242,8 +244,8 @@ class AssistantUI:
             # Show or lazily create debug buttons (READ removed)
             col = self.nav_frame.grid_size()[0]
             if not hasattr(self, 'dump_btn'):
-                self.dump_btn = ttk.Button(self.nav_frame, text='DUMP', command=self.dump_html, 
-                                           state='disabled', width=6)
+                self.dump_btn = ttk.Button(self.nav_frame, text='DMP', command=self.dump_html, 
+                                           state='disabled')
                 self.dump_btn.grid(row=0, column=col, sticky='ew', padx=1)
                 col += 1
             else:
@@ -251,7 +253,7 @@ class AssistantUI:
 
             if not hasattr(self, 'sum_btn'):
                 self.sum_btn = ttk.Button(self.nav_frame, text='SUM', command=self.dump_analysis, 
-                                          state='disabled', width=6)
+                                          state='disabled')
                 self.sum_btn.grid(row=0, column=col, sticky='ew', padx=1)
             else:
                 self.sum_btn.grid()
@@ -259,9 +261,9 @@ class AssistantUI:
         else:
             print('[DEBUG] Debug mode DISABLED')
             try:
-                self.debug_toggle_btn.config(text='DEBUG', style='')
+                self.debug_toggle_btn.config(text='DBG', style='')
             except:
-                self.debug_toggle_btn.config(text='DEBUG')
+                self.debug_toggle_btn.config(text='DBG')
 
             # Hide photo label
             if self.photo_label:
