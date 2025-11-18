@@ -1,0 +1,453 @@
+"""UI components - extracted from inject_v3.py"""
+import tkinter as tk
+from tkinter import ttk, messagebox
+import threading
+import re
+
+
+class AssistantUI:
+    """Minimal UI for Google Photos tagger."""
+    
+    def __init__(self, root, browser_controller, keystroke_handler, debug_mode=False):
+        print('[UI] Initializing...')
+        self.root = root
+        self.browser = browser_controller
+        self.keystroke = keystroke_handler
+        self.debug_mode = debug_mode
+        
+        root.title('Google Photos Tagger - Old Device Mode')
+        
+        # Position window at bottom of screen
+        root.update_idletasks()  # Ensure geometry is calculated
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        
+        # Main frame
+        main = ttk.Frame(root, padding=5)
+        main.grid(row=0, column=0, sticky='nsew')
+
+        # ROW 0: Navigation and control buttons
+        nav_frame = ttk.Frame(main)
+        nav_frame.grid(row=0, column=0, columnspan=4, sticky='ew', pady=(0, 4))
+        # keep a reference so other methods can add/remove debug buttons later
+        self.nav_frame = nav_frame
+
+        self.launch_default_btn = ttk.Button(nav_frame, text='LAUNCH', 
+                                              command=lambda: self.launch_with_mode('default'),
+                                              width=8)
+        self.launch_default_btn.grid(row=0, column=0, sticky='ew', padx=1)
+
+        self.prev_btn = ttk.Button(nav_frame, text='← PREV', command=self.prev_photo, 
+                                    state='disabled', width=8)
+        self.prev_btn.grid(row=0, column=1, sticky='ew', padx=1)
+
+        self.next_btn = ttk.Button(nav_frame, text='NEXT →', command=self.next_photo, 
+                                    state='disabled', width=8)
+        self.next_btn.grid(row=0, column=2, sticky='ew', padx=1)
+
+        # DEBUG toggle button (always visible)
+        self.debug_toggle_btn = ttk.Button(nav_frame, text='DEBUG', command=self.toggle_debug,
+                                            width=8)
+        self.debug_toggle_btn.grid(row=0, column=3, sticky='ew', padx=1)
+        
+        # Set initial button appearance based on debug_mode
+        if self.debug_mode:
+            try:
+                self.debug_toggle_btn.config(text='DEBUG ✓', style='Accent.TButton')
+            except:
+                self.debug_toggle_btn.config(text='DEBUG ✓')  # Fallback if style not available
+
+        self.backspace_btn = ttk.Button(nav_frame, text='⌫ BACK', command=self.do_backspace, 
+                                        state='disabled', width=8)
+        self.backspace_btn.grid(row=0, column=4, sticky='ew', padx=1)
+        
+        self.reload_btn = ttk.Button(nav_frame, text='↻ RELOAD', command=self.reload_names, 
+                                     state='disabled', width=8)
+        self.reload_btn.grid(row=0, column=5, sticky='ew', padx=1)
+        
+        # Debug buttons (optional) - create only if debug_mode at init, otherwise create lazily
+        debug_col = 6
+        if self.debug_mode:
+            self.dump_btn = ttk.Button(self.nav_frame, text='DUMP', command=self.dump_html, 
+                                       state='disabled', width=6)
+            self.dump_btn.grid(row=0, column=debug_col, sticky='ew', padx=1)
+            debug_col += 1
+
+            self.sum_btn = ttk.Button(self.nav_frame, text='SUM', command=self.dump_analysis, 
+                                      state='disabled', width=6)
+            self.sum_btn.grid(row=0, column=debug_col, sticky='ew', padx=1)
+            debug_col += 1
+        
+        for i in range(debug_col):
+            nav_frame.columnconfigure(i, weight=1)
+
+        # ROW 1: Name shortcut buttons
+        self.shortcut_frame = ttk.Frame(main)
+        self.shortcut_frame.grid(row=1, column=0, columnspan=4, sticky='ew', pady=(0, 4))
+        
+        self.name_buttons = []
+        self._create_name_buttons()
+
+        # Photo URL label - row 2 (only in debug mode)
+        if self.debug_mode:
+            self.photo_label = ttk.Label(main, text='Photo: (not connected)', font=('Courier', 10))
+            self.photo_label.grid(row=2, column=0, columnspan=4, sticky='w', pady=(8, 8))
+        else:
+            self.photo_label = None
+
+        # Description label - row 3 (only in debug mode)
+        if self.debug_mode:
+            self.desc_frame = ttk.LabelFrame(main, text='Current Description')
+            self.desc_frame.grid(row=3, column=0, columnspan=4, sticky='nsew', pady=8)
+            self.desc_label = ttk.Label(self.desc_frame, text='(no description)', wraplength=600, justify='left')
+            self.desc_label.pack(padx=8, pady=8, anchor='w')
+        else:
+            self.desc_frame = None
+            self.desc_label = None
+
+        # Keyboard status label - row 4
+        self.keyboard_status = ttk.Label(main, text='Keyboard: Click window to focus, then press keys', 
+                                          font=('Courier', 9), foreground='blue')
+        self.keyboard_status.grid(row=4, column=0, columnspan=4, sticky='w', pady=(4, 0))
+
+        # Bind keyboard events
+        root.bind('<KeyPress>', self.on_key_press)
+        main.bind('<KeyPress>', self.on_key_press)
+        # Intercept space bar on buttons to prevent them from being triggered
+        # Must return 'break' to stop event propagation and prevent button activation
+        def handle_button_space(event):
+            self.on_key_press(event)
+            return 'break'  # Prevent default button behavior
+        
+        root.bind_class('Button', '<KeyPress-space>', handle_button_space)
+        root.bind_class('Button', '<space>', handle_button_space)
+        root.bind_class('TButton', '<KeyPress-space>', handle_button_space)  # For ttk.Button
+        root.bind_class('TButton', '<space>', handle_button_space)  # For ttk.Button
+        main.focus_set()
+        
+        print(f'[UI] Registered {len(self.keystroke.get_all_shortcuts())} keyboard shortcuts')
+        print(f'[UI] Shortcuts: {list(self.keystroke.get_all_shortcuts().keys())}')
+        
+        print('[UI] Starting poll loop')
+        self.poll_browser_state()
+        
+        # Position window at bottom after all widgets are created
+        root.update_idletasks()
+        window_width = root.winfo_reqwidth()
+        window_height = root.winfo_reqheight()
+        x_position = (screen_width - window_width) // 2
+        y_position = screen_height - window_height - 50  # 50px from bottom for taskbar
+        root.geometry(f'+{x_position}+{y_position}')
+    
+    def _create_name_buttons(self):
+        """Create name shortcut buttons from keystroke handler's names list.
+        Letter-based shortcuts on first row, number-based on second row."""
+        # Clear existing buttons
+        for btn in self.name_buttons:
+            btn.destroy()
+        self.name_buttons = []
+        
+        letter_buttons = []
+        number_buttons = []
+        
+        # Separate names into letter-based and number-based
+        for raw in self.keystroke.get_names_list():
+            if re.search(r'\(\d+\)', raw):  # Number-based like "(1) Dennis"
+                number_buttons.append(raw)
+            else:  # Letter-based like "(D)ennis"
+                letter_buttons.append(raw)
+        
+        # Create letter-based buttons on row 0
+        for idx, raw in enumerate(letter_buttons):
+            label = raw
+            pushed = ''.join(ch for ch in raw if ch not in '()')
+            
+            btn = ttk.Button(self.shortcut_frame, text=label, 
+                            command=(lambda p=pushed: self.add_name(p)), 
+                            state='disabled' if not self.browser._running else 'normal',
+                            width=10)
+            btn.grid(row=0, column=idx, sticky='ew', padx=1, pady=1)
+            self.name_buttons.append(btn)
+        
+        # Configure columns for row 0
+        for i in range(len(letter_buttons)):
+            self.shortcut_frame.columnconfigure(i, weight=1)
+        
+        # Create number-based buttons on row 1
+        for idx, raw in enumerate(number_buttons):
+            label = raw
+            # Strip the numeric prefix for display and pushing
+            # Do NOT call .strip() here so trailing spaces from names.json are preserved
+            stripped_label = re.sub(r'^\(\d+\)\s*', '', raw)
+            pushed = ''.join(ch for ch in stripped_label if ch not in '()') if stripped_label else ''
+            
+            btn = ttk.Button(self.shortcut_frame, text=label, 
+                            command=(lambda p=pushed: self.add_name(p)), 
+                            state='disabled' if not self.browser._running else 'normal',
+                            width=12)
+            btn.grid(row=1, column=idx, sticky='ew', padx=1, pady=1)
+            self.name_buttons.append(btn)
+        
+        # Configure columns for row 1
+        for i in range(len(number_buttons)):
+            self.shortcut_frame.columnconfigure(i, weight=1)
+    
+    def reload_names(self):
+        """Reload names from names.json and update UI."""
+        try:
+            print('[RELOAD] Reloading names.json...')
+            new_names = self.keystroke.reload_shortcuts()
+            
+            # Rebuild name buttons
+            self._create_name_buttons()
+            
+            messagebox.showinfo('Reload Complete', 
+                              f'Reloaded {len(new_names)} names from names.json')
+            print(f'[RELOAD] Successfully reloaded {len(new_names)} names')
+            
+        except Exception as e:
+            print(f'[RELOAD] ERROR: {e}')
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror('Reload Failed', f'Failed to reload names.json: {str(e)}')
+    
+    def toggle_debug(self):
+        """Toggle debug mode on/off and update UI accordingly."""
+        self.debug_mode = not self.debug_mode
+        if self.debug_mode:
+            print('[DEBUG] Debug mode ENABLED')
+            try:
+                self.debug_toggle_btn.config(text='DEBUG ✓', style='Accent.TButton')
+            except:
+                self.debug_toggle_btn.config(text='DEBUG ✓')
+
+            # Create photo label if it doesn't exist
+            if not self.photo_label:
+                main = self.root.winfo_children()[0]  # Get main frame
+                self.photo_label = ttk.Label(main, text='Photo: (not connected)', font=('Courier', 10))
+                self.photo_label.grid(row=2, column=0, columnspan=4, sticky='w', pady=(8, 8))
+            else:
+                self.photo_label.grid()
+
+            # Create description frame if it doesn't exist
+            if not self.desc_frame:
+                main = self.root.winfo_children()[0]  # Get main frame
+                self.desc_frame = ttk.LabelFrame(main, text='Current Description')
+                self.desc_frame.grid(row=3, column=0, columnspan=4, sticky='nsew', pady=8)
+                self.desc_label = ttk.Label(self.desc_frame, text='(no description)', wraplength=600, justify='left')
+                self.desc_label.pack(padx=8, pady=8, anchor='w')
+            else:
+                self.desc_frame.grid()
+
+            # Show or lazily create debug buttons (READ removed)
+            col = self.nav_frame.grid_size()[0]
+            if not hasattr(self, 'dump_btn'):
+                self.dump_btn = ttk.Button(self.nav_frame, text='DUMP', command=self.dump_html, 
+                                           state='disabled', width=6)
+                self.dump_btn.grid(row=0, column=col, sticky='ew', padx=1)
+                col += 1
+            else:
+                self.dump_btn.grid()
+
+            if not hasattr(self, 'sum_btn'):
+                self.sum_btn = ttk.Button(self.nav_frame, text='SUM', command=self.dump_analysis, 
+                                          state='disabled', width=6)
+                self.sum_btn.grid(row=0, column=col, sticky='ew', padx=1)
+            else:
+                self.sum_btn.grid()
+
+        else:
+            print('[DEBUG] Debug mode DISABLED')
+            try:
+                self.debug_toggle_btn.config(text='DEBUG', style='')
+            except:
+                self.debug_toggle_btn.config(text='DEBUG')
+
+            # Hide photo label
+            if self.photo_label:
+                self.photo_label.grid_remove()
+
+            # Hide description frame
+            if self.desc_frame:
+                self.desc_frame.grid_remove()
+
+            # Hide debug buttons if they exist
+            if hasattr(self, 'read_btn'):
+                self.read_btn.grid_remove()
+            if hasattr(self, 'dump_btn'):
+                self.dump_btn.grid_remove()
+            if hasattr(self, 'sum_btn'):
+                self.sum_btn.grid_remove()
+
+    def on_key_press(self, event):
+        """Handle keyboard shortcuts and natural typing."""
+        # Extract keycode if available (from event.keysym_num on some systems)
+        keycode = getattr(event, 'keysym_num', None)
+        keysym = event.keysym
+        
+        self.keyboard_status.config(text=f'Last key pressed: "{event.char}" (keysym: {keysym}, state: {event.state}, keycode: {keycode})')
+        
+        if not self.browser._running:
+            print(f'[SHORTCUT] Ignored key "{event.char}" - browser not running')
+            return
+
+        # Check for Ctrl modifier using state bitmask (0x04 on Mac/Linux)
+        ctrl_pressed = bool(event.state & 0x04)
+        
+        # Map keysym to key char for Ctrl combinations
+        key = event.char if event.char else keysym
+        
+        # If it's a printable character (not a special key) and not a control combo
+        # Reserved keys: numbers 1-9 and '=' and shifted number symbols
+        # Letters (including n, N, p, P) pass through as natural keystrokes
+        reserved_keys = {'=', '1', '2', '3', '4', '5', '6', '7', '8', '9', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')'}
+        if len(key) == 1 and key.isprintable() and not ctrl_pressed and event.char and key not in reserved_keys:
+            print(f'[KEYSTROKE] Sending "{key}" directly to web page')
+            self.browser.send_keystroke(key)
+            return 'break'
+        
+        # Handle numeric keys for Ctrl+1, Ctrl+2, Ctrl+3
+        if ctrl_pressed and key.isdigit():
+            print(f'[MODIFIER_COMBO] Ctrl+{key} pressed')
+            action = self.keystroke.on_key_press(key, ctrl=True, state=event.state, keycode=keycode, keysym=keysym)
+        else:
+            action = self.keystroke.on_key_press(key, ctrl=ctrl_pressed, state=event.state, keycode=keycode, keysym=keysym)
+        
+        if action:
+            action_type, action_data = action
+            print(f'[SHORTCUT] Key "{key}" (ctrl={ctrl_pressed}, state={event.state}) -> {action_type}: {action_data}')
+
+            if action_type == 'next':
+                self.next_photo()
+            elif action_type == 'prev':
+                self.prev_photo()
+            elif action_type == 'name':
+                self.add_name(action_data)
+            elif action_type == 'name_and_next':
+                # Add name and immediately go to next photo
+                self.add_name(action_data)
+                self.next_photo()
+            # 'space' action removed - no-op
+            elif action_type == 'backspace':
+                self.do_backspace()
+            elif action_type == 'delete_all':
+                self.delete_all_description()
+            elif action_type == 'cursor_to_end':
+                self.position_cursor_at_end()
+            elif action_type == 'tab_dennis':
+                self.add_name('Dennis ')
+                self.next_photo()
+            
+            return 'break'
+
+    def add_name(self, name):
+        """Append a given name string to the current description."""
+        print(f'[ADD_NAME] Queueing append for: {name}')
+        threading.Thread(target=lambda: self.browser.append_text(name), daemon=True).start()
+
+    def launch_with_mode(self, mode):
+        """Launch browser with specific user agent mode."""
+        def _launch():
+            try:
+                print(f'[LAUNCH] Starting browser with mode: {mode}')
+                
+                self.browser._launch_mode = mode
+                
+                self.browser.start(headful=True)
+                print('[LAUNCH] Browser started')
+                self.root.after(0, self._on_browser_ready)
+            except Exception as e:
+                print(f'[LAUNCH] ERROR: {e}')
+                import traceback
+                traceback.print_exc()
+                error_msg = str(e)
+                self.root.after(0, lambda msg=error_msg: messagebox.showerror('Error', msg))
+
+        threading.Thread(target=_launch, daemon=True).start()
+
+    def _on_browser_ready(self):
+        """Called when browser is ready."""
+        self.launch_default_btn.config(state='disabled')
+        
+        self.prev_btn.config(state='normal')
+        self.next_btn.config(state='normal')
+        self.backspace_btn.config(state='normal')
+        self.reload_btn.config(state='normal')
+        if hasattr(self, 'read_btn'):
+            self.read_btn.config(state='normal')
+        if hasattr(self, 'dump_btn'):
+            self.dump_btn.config(state='normal')
+        if hasattr(self, 'sum_btn'):
+            self.sum_btn.config(state='normal')
+        
+        try:
+            for b in getattr(self, 'name_buttons', []):
+                try:
+                    b.config(state='normal')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        
+        self.keyboard_status.config(text='Keyboard: READY - Press ← → arrows for navigation, or name keys', 
+                                     foreground='green')
+        
+        messagebox.showinfo('Browser Ready', 'Browser launched. Please log into Google Photos if needed.\n\nKeyboard shortcuts are active!')
+
+    def next_photo(self):
+        """Go to next photo."""
+        threading.Thread(target=self.browser.goto_next_photo, daemon=True).start()
+
+    def prev_photo(self):
+        """Go to previous photo."""
+        threading.Thread(target=self.browser.goto_prev_photo, daemon=True).start()
+
+    def do_backspace(self):
+        """Send backspace to browser."""
+        threading.Thread(target=self.browser.send_backspace, daemon=True).start()
+
+    def delete_all_description(self):
+        """Delete entire description."""
+        threading.Thread(target=self.browser.delete_all_description, daemon=True).start()
+
+    def dump_html(self):
+        """Dump current page HTML for debugging."""
+        threading.Thread(target=self.browser.dump_html, daemon=True).start()
+
+    def dump_analysis(self):
+        """Run dump-explorer analysis on current page."""
+        threading.Thread(target=self.browser.dump_analysis, daemon=True).start()
+
+    def poll_browser_state(self):
+        """Poll browser state and update UI."""
+        try:
+            state = self.browser.get_state()
+            
+            if self.photo_label:  # Only update if it exists
+                url = state.get('url')
+                if url:
+                    short = url.split('/')[-1]
+                    self.photo_label.config(text=f'Photo: {short}')
+            
+            if self.desc_label:  # Only update if it exists
+                desc = state.get('description')
+                if desc:
+                    preview = desc if len(desc) < 200 else (desc[:197] + '...')
+                    self.desc_label.config(text=preview)
+                else:
+                    self.desc_label.config(text='(no description)')
+        except Exception as e:
+            print(f'[POLL] ERROR: {e}')
+
+        self.root.after(500, self.poll_browser_state)
+
+    def shutdown(self):
+        """Shutdown."""
+        try:
+            self.browser.stop()
+        except Exception:
+            pass
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
