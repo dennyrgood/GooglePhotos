@@ -302,7 +302,7 @@ class AssistantUI:
         # If it's a printable character (not a special key) and not a control combo
         # Reserved keys: numbers 1-9 and '=' and shifted number symbols
         # Letters (including n, N, p, P) pass through as natural keystrokes
-        reserved_keys = {'=', '1', '2', '3', '4', '5', '6', '7', '8', '9', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')'}
+        reserved_keys = {'=', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')'}
         if len(key) == 1 and key.isprintable() and not ctrl_pressed and event.char and key not in reserved_keys:
             print(f'[KEYSTROKE] Sending "{key}" directly to web page')
             self.browser.send_keystroke(key)
