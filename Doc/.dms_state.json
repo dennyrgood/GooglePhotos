@@ -1,0 +1,75 @@
+{
+  "metadata": {
+    "created": "2025-11-25T00:21:51.589760",
+    "last_scan": null,
+    "last_apply": "2025-11-25T00:22:45.426617"
+  },
+  "categories": [
+    "Guides",
+    "Workflows",
+    "scripts",
+    "Models",
+    "QuickRefs",
+    "Junk"
+  ],
+  "documents": {
+    "./index.html": {
+      "hash": "sha256:55df8f9a51d2e9af8579cc4836d9862b9948b1fd6a13af3cff6e0cf156c40032",
+      "category": "Guides",
+      "summary": "An HTML document with CSS styling that serves as an index page for project documentation, featuring navigation elements and file listing.",
+      "summary_approved": true,
+      "title": "index",
+      "last_processed": "2025-11-25T00:22:45.426451",
+      "file_mtime": "2025-11-25T00:21:51.621954"
+    },
+    "./Google Photos Navigation POC - Test App Specification v.0.2.pdf": {
+      "hash": "sha256:029bb16d7f9b2d6c36b2d4d5ceeede83bba4d52876477738c27d9ae30cb3c48f",
+      "category": "Guides",
+      "summary": "A specification for a proof-of-concept test app in Python to validate automated navigation within Google Photos by clicking the right side of the photo area.",
+      "summary_approved": true,
+      "title": "Google Photos Navigation POC - Test App Specification v.0.2",
+      "last_processed": "2025-11-25T00:22:45.426505",
+      "file_mtime": "2025-11-08T22:21:15.655644",
+      "readable_version": "./md_outputs/Google Photos Navigation POC - Test App Specification v.0.2.md"
+    },
+    "./Debugging Guide_ Description Textarea Not Found.pdf": {
+      "hash": "sha256:a0a62c8e4a32b9bb4b1e07f9bf0d802f85daa939cb3e5a99ef3f4008e0f6b21d",
+      "category": "Guides",
+      "summary": "This guide outlines steps for debugging when Google Photos' HTML structure changes, focusing on identifying and updating class names in the browser automation script.",
+      "summary_approved": true,
+      "title": "Debugging Guide_ Description Textarea Not Found",
+      "last_processed": "2025-11-25T00:22:45.426533",
+      "file_mtime": "2025-11-16T00:13:29.363625",
+      "readable_version": "./md_outputs/Debugging Guide_ Description Textarea Not Found.md"
+    },
+    "./test_focus.html": {
+      "hash": "sha256:03d5a67babd8a51f970dece6ff1f429669ab1c0cc876097f5bb5f012bbe8b44a",
+      "category": "Guides",
+      "summary": "Provides guidance on identifying stable elements in Google Photos' DOM for accessibility purposes.",
+      "summary_approved": true,
+      "title": "test_focus",
+      "last_processed": "2025-11-25T00:22:45.426555",
+      "file_mtime": "2025-11-14T18:07:47.674566"
+    },
+    "./Google Photos DOM Analysis - Key Findings.pdf": {
+      "hash": "sha256:fe3f09d19d7ea33ea6d27ac896facfbcb1d2d52a732e0b49d3c09c10598367c0",
+      "category": "Guides",
+      "summary": "This document summarizes key findings from an analysis of Google Photos DOM structure, identifying issues with the original element selection strategy for extracting face and album data.",
+      "summary_approved": true,
+      "title": "Google Photos DOM Analysis - Key Findings",
+      "last_processed": "2025-11-25T00:22:45.426573",
+      "file_mtime": "2025-11-16T07:44:30.154002",
+      "readable_version": "./md_outputs/Google Photos DOM Analysis - Key Findings.md"
+    },
+    "./Google Photos Bulk Description Automation - Project Brief v.0.1.pdf": {
+      "hash": "sha256:824ce36b8cb76484032ce9b5168dccb489e2d705886ec1a6e0069e3a8498e29c",
+      "category": "Guides",
+      "summary": "Describes the development of a Python desktop app for semi-automated tagging in Google Photos, including UI design and browser automation features.",
+      "summary_approved": true,
+      "title": "Google Photos Bulk Description Automation - Project Brief v.0.1",
+      "last_processed": "2025-11-25T00:22:45.426591",
+      "file_mtime": "2025-11-08T22:15:14.981069",
+      "readable_version": "./md_outputs/Google Photos Bulk Description Automation - Project Brief v.0.1.md"
+    }
+  }
+}
